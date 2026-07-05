@@ -65,13 +65,30 @@ struct DeepCleanView: View {
     }
 
     private var startScanButton: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "magnifyingglass.circle.fill")
+                .font(.system(size: 48))
+                .foregroundColor(.appAccent)
+            Text("Ready to Scan")
+                .font(.title3.bold())
+            Text("Scan system data, macOS caches, app containers, and development artifacts")
+                .font(.subheadline)
+                .foregroundColor(.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
         Button(action: { Task { await viewModel.scan() } }) {
-            Label("Scan for Deep Cleanup Items", systemImage: "magnifyingglass")
+            Label("Scan All", systemImage: "magnifyingglass")
+                .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+        }
+        .padding(40)
+        .background(Color.appCard)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .appShadow, radius: 4)
     }
 
     private var scanningSection: some View {
@@ -95,13 +112,18 @@ struct DeepCleanView: View {
                 let totalSize = viewModel.deepItems.reduce(0) { $0 + $1.sizeBytes }
                 let selectedSize = viewModel.deepItems.filter(\.isSelected).reduce(0) { $0 + $1.sizeBytes }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Found \(viewModel.deepItems.count) items")
+                    Text("\(viewModel.deepItems.count) items found")
                         .font(.headline)
                     Text("\(FileSizeFormatter.string(from: totalSize)) total — \(FileSizeFormatter.string(from: selectedSize)) selected")
                         .font(.caption)
                         .foregroundColor(.textSecondary)
                 }
                 Spacer()
+
+                Button("Scan All", systemImage: "arrow.clockwise") {
+                    Task { await viewModel.scan() }
+                }
+                .buttonStyle(.borderless)
 
                 Button("Select All") {
                     for idx in viewModel.deepItems.indices { viewModel.deepItems[idx].isSelected = true }

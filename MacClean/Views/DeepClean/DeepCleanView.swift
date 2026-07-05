@@ -135,28 +135,31 @@ struct DangerItemCard: View {
 
     var body: some View {
         HStack {
-            Toggle(isOn: Binding(
-                get: { item.isSelected },
-                set: { _ in onToggle() }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Image(systemName: item.category.iconName)
-                            .foregroundColor(item.category.color)
-                        Text(item.subcategory ?? item.url.lastPathComponent)
-                            .font(.body)
-                    }
-                    Text(item.category.description)
-                        .font(.caption)
-                        .foregroundColor(.textSecondary)
-                    if let modified = item.lastModifiedFormatted {
-                        Text("Last modified: \(modified)")
-                            .font(.caption2)
+            Button(action: onToggle) {
+                HStack(spacing: 10) {
+                    Image(systemName: item.isSelected ? "checkmark.square.fill" : "square")
+                        .foregroundColor(item.isSelected ? .appAccent : .textSecondary)
+                        .font(.title3)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image(systemName: item.category.iconName)
+                                .foregroundColor(item.category.color)
+                            Text(item.subcategory ?? item.url.lastPathComponent)
+                                .font(.body)
+                        }
+                        Text(item.category.description)
+                            .font(.caption)
                             .foregroundColor(.textSecondary)
+                        if let modified = item.lastModifiedFormatted {
+                            Text("Last modified: \(modified)")
+                                .font(.caption2)
+                                .foregroundColor(.textSecondary)
+                        }
                     }
                 }
             }
-            .toggleStyle(.checkbox)
+            .buttonStyle(.plain)
 
             Spacer()
 

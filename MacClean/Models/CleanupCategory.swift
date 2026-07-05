@@ -6,7 +6,8 @@ enum RiskLevel: String, Codable, Sendable {
     case warning
 }
 
-enum CleanupCategory: String, CaseIterable, Codable, Sendable {
+enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
+    var id: String { rawValue }
     case userCaches
     case systemCaches
     case userLogs
@@ -107,6 +108,16 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable {
         case .trash: return "Items in the trash bin"
         case .systemTemp: return "Temporary system files older than 1 day"
         case .containerCaches: return "App sandbox container caches"
+        }
+    }
+
+    var sidebarDestination: SidebarItem {
+        switch self {
+        case .trash: return .trash
+        case .claudeVM, .xcodeData, .iosSimulators, .dnsCache, .systemTemp:
+            return .deepCleanup
+        default:
+            return .cacheCleanup
         }
     }
 }

@@ -74,19 +74,30 @@ actor DiagnosticService {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return [] }
 
-        var dirs: [(url: URL, size: Int64)] = []
+        var dirSizes: [URL: Int64] = [:]
+        let baseComponents = path.pathComponents.count
 
         while let fileURL = enumerator.nextObject() as? URL {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
-                  resourceValues.isDirectory == true
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
             else { continue }
 
-            let size = FileManager.default.directorySize(at: fileURL)
-            dirs.append((fileURL, size))
+            if resourceValues.isDirectory == true { continue }
+
+            // Add file size to all parent directories
+            if let fileSize = resourceValues.fileSize {
+                var parentURL = fileURL.deletingLastPathComponent()
+                while parentURL.pathComponents.count > baseComponents {
+                    dirSizes[parentURL, default: 0] += Int64(fileSize)
+                    parentURL = parentURL.deletingLastPathComponent()
+                }
+            }
         }
 
-        dirs.sort { $0.size > $1.size }
-        return dirs
+        let result = dirSizes.map { ($0.key, $0.value) }
+            .filter { $0.1 >= 50_000_000 } // >= 50MB
+            .sorted { $0.1 > $1.1 }
+
+        return result
     }
 
     // MARK: - App Storage Breakdown
@@ -116,27 +127,27 @@ actor DiagnosticService {
     private nonisolated func scanAppSupportDirectories(at path: URL) -> [(url: URL, size: Int64)] {
         guard let enumerator = FileManager.default.enumerator(
             at: path,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
         let topLevelCount = path.pathComponents.count + 1
-        var apps: [(url: URL, size: Int64)] = []
+        var dirSizes: [URL: Int64] = [:]
 
         while let fileURL = enumerator.nextObject() as? URL {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
-                  resourceValues.isDirectory == true
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
             else { continue }
-            guard fileURL.pathComponents.count == topLevelCount else { continue }
 
-            let size = FileManager.default.directorySize(at: fileURL)
-            if size > 50_000_000 {
-                apps.append((fileURL, size))
+            // Top-level apps (directories at depth + 1 from path)
+            if resourceValues.isDirectory == true, fileURL.pathComponents.count == topLevelCount {
+                let size = FileManager.default.directorySize(at: fileURL)
+                if size > 50_000_000 {
+                    dirSizes[fileURL] = size
+                }
             }
         }
 
-        apps.sort { $0.size > $1.size }
-        return apps
+        return dirSizes.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
     }
 
     // MARK: - Private Helpers

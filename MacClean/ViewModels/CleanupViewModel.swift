@@ -138,7 +138,8 @@ final class CleanupViewModel {
             }
         }
         if itemsToClean.contains(where: { $0.category == .trash }) {
-            if let result = try? await cleanupService.emptyTrash() {
+            let trashSvc = TrashService()
+            if let result = try? await trashSvc.emptyTrash() {
                 results.append(result)
             }
         }

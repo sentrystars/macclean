@@ -1,7 +1,6 @@
 import Foundation
 
-/// Service for handling privileged operations via SMJobBless XPC helper tool.
-/// Falls back to AuthorizationExecuteWithPrivileges if helper tool is unavailable.
+/// Service for handling privileged operations via osascript with admin rights.
 actor PrivilegeService {
     private let fileManager = FileManager.default
     private var isHelperInstalled = false
@@ -9,23 +8,25 @@ actor PrivilegeService {
     var isHelperToolInstalled: Bool { isHelperInstalled }
 
     func checkHelperToolStatus() -> Bool {
-        // Check if helper tool is registered with launchd
-        // For now, return false to indicate we need to install it
         return isHelperInstalled
     }
 
     func installHelperTool() async throws {
-        // SMJobBless installation logic
-        // For MVP, we'll use AuthorizationExecuteWithPrivileges as a simpler approach
         isHelperInstalled = true
     }
 
-    /// Execute a privileged command using AuthorizationExecuteWithPrivileges
-    func executePrivilegedCommand(_ command: String, args: [String]) async throws -> String {
-        // For now, use Process with sudo via NSAppleScript or similar
-        // In production, this should use SMJobBless + XPC
-        let fullCommand = "osascript -e 'do shell script \"\(command) \(args.joined(separator: " "))\" with administrator privileges'"
-        return try await Process.runAsync(executable: "/bin/zsh", arguments: ["-c", fullCommand])
+    /// Write AppleScript to a temp file and run with osascript (no shell wrapping).
+    private func runPrivilegedShell(_ command: String) async throws -> String {
+        // Escape for AppleScript string within do shell script "..."
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = "do shell script \"\(escaped)\" with administrator privileges"
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).scpt")
+        try source.write(to: tempURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        return try await Process.runAsync(executable: "/usr/bin/osascript", arguments: [tempURL.path])
     }
 
     /// Remove items at system paths that require privileged access
@@ -46,11 +47,12 @@ actor PrivilegeService {
                     )
                     continuation.yield(progress)
 
-                    // Use osascript to get admin privileges for system-level deletions
-                    let script = "do shell script \"rm -rf '\(path.path)/'* 2>/dev/null; rm -f '\(path.path)' 2>/dev/null\" with administrator privileges"
-                    let cmd = "osascript -e '\(script)'"
+                    let escapedPath = path.path
+                        .replacingOccurrences(of: "\\", with: "\\\\")
+                        .replacingOccurrences(of: "\"", with: "\\\"")
+                    let cmd = "rm -rf \"\(escapedPath)\" 2>/dev/null"
 
-                    if let result = try? await Process.runAsync(executable: "/bin/zsh", arguments: ["-c", cmd]) {
+                    if (try? await runPrivilegedShell(cmd)) != nil {
                         freed += fileManager.directorySize(at: path)
                         cleaned += 1
                     }
@@ -70,10 +72,12 @@ actor PrivilegeService {
 
     /// Get directory size for a system path requiring privileges
     func getPrivilegedDirectorySize(at path: URL) async -> Int64 {
-        let script = "do shell script \"du -sm '\(path.path)' 2>/dev/null | awk '{print $1}'\" with administrator privileges"
-        let cmd = "osascript -e '\(script)'"
+        let escapedPath = path.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let cmd = "du -sm \"\(escapedPath)\" 2>/dev/null | awk '{print $1}'"
 
-        guard let result = try? await Process.runAsync(executable: "/bin/zsh", arguments: ["-c", cmd]),
+        guard let result = try? await runPrivilegedShell(cmd),
               let mb = Int64(result.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return 0 }
         return mb * 1_048_576

@@ -181,13 +181,22 @@ struct DashboardView: View {
                 .font(.title2.bold())
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200))], spacing: 12) {
-                ForEach(CleanupCategory.allCases, id: \.self) { category in
-                    NavigationLink(value: SidebarItem.cacheCleanup) {
-                        CategoryCardView(category: category, sizeBytes: 0)
+                ForEach(CleanupCategory.allCases) { category in
+                    NavigationLink(value: category.sidebarDestination) {
+                        CategoryCardView(category: category, sizeBytes: categorySize(category))
                     }
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private func categorySize(_ category: CleanupCategory) -> Int64 {
+        guard let info = viewModel.storageInfo else { return 0 }
+        switch category {
+        case .trash: return info.trashBytes ?? 0
+        case .userCaches, .systemCaches, .appCaches, .containerCaches: return info.cacheBytes ?? 0
+        default: return 0
         }
     }
 

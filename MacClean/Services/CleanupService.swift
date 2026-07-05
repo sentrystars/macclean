@@ -15,12 +15,7 @@ actor CleanupService {
                 var freed: Int64 = 0
                 var errors: [String] = []
 
-                for item in items where !item.isSelected {
-                    cleaned += 1
-                    continue
-                }
-
-                for item in items where item.isSelected {
+                for item in items {
                     if self.isCancelled { break }
 
                     let progress = CleanProgress(
@@ -107,24 +102,6 @@ actor CleanupService {
             category: .iosSimulators,
             bytesFreed: max(0, freed),
             itemsRemoved: freed > 0 ? 1 : 0
-        )
-    }
-
-    // MARK: - Empty Trash
-    func emptyTrash() async throws -> CleanupResult {
-        let trashURL = URL.homeDirectory.appendingPathComponent(AppConstants.trashPath)
-        guard fileManager.fileExists(atPath: trashURL.path) else {
-            return CleanupResult(category: .trash, bytesFreed: 0, itemsRemoved: 0)
-        }
-
-        let size = fileManager.directorySize(at: trashURL)
-        try fileManager.removeItem(at: trashURL)
-        try fileManager.createDirectory(at: trashURL, withIntermediateDirectories: false)
-
-        return CleanupResult(
-            category: .trash,
-            bytesFreed: size,
-            itemsRemoved: 1
         )
     }
 

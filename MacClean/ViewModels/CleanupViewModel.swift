@@ -182,8 +182,8 @@ final class CleanupViewModel {
         phase = .complete(results: results)
 
         // Record cleanup history
-        let totalFreed = results.reduce(0) { $0 + $1.bytesFreed }
-        if totalFreed > 0 {
+        let totalCleaned = results.reduce(0) { $0 + $1.bytesFreed }
+        if totalCleaned > 0 {
             CleanupHistory.shared.recordCleanup(freed: totalFreed)
         }
     }

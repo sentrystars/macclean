@@ -85,6 +85,12 @@ final class DeepCleanViewModel {
         }
 
         isCleaning = false
+
+        // Record cleanup history
+        let totalFreed = results.reduce(0) { $0 + $1.bytesFreed }
+        if totalFreed > 0 {
+            CleanupHistory.shared.recordCleanup(freed: totalFreed)
+        }
     }
 
     func cancel() {

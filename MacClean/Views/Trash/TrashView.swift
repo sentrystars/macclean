@@ -53,16 +53,33 @@ struct TrashView: View {
                         Text("Contents")
                             .font(.title2.bold())
 
-                        ForEach(viewModel.trashItems.prefix(30), id: \.self) { url in
+                        ForEach(viewModel.trashItems.prefix(30)) { item in
                             HStack {
-                                Image(systemName: iconForURL(url))
-                                    .foregroundColor(.textSecondary)
-                                Text(url.lastPathComponent)
-                                    .lineLimit(1)
-                                Spacer()
-                                if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                                    FileSizeText(bytes: Int64(size), font: .caption.monospacedDigit(), color: .textSecondary)
+                                Image(systemName: item.isDirectory ? "folder" : "doc")
+                                    .foregroundColor(item.isDirectory ? .appAccent : .textSecondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.subcategory ?? item.url.lastPathComponent)
+                                        .lineLimit(1)
+                                        .font(.body)
+                                    if let modified = item.lastModifiedFormatted {
+                                        Text(modified)
+                                            .font(.caption)
+                                            .foregroundColor(.textSecondary)
+                                    }
                                 }
+                                Spacer()
+
+                                Button {
+                                    NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                                } label: {
+                                    Image(systemName: "arrow.right.circle")
+                                        .foregroundColor(.appAccent)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Reveal in Finder")
+
+                                FileSizeText(bytes: item.sizeBytes, font: .caption.monospacedDigit(), color: .textSecondary)
+                                    .frame(width: 80, alignment: .trailing)
                             }
                             .padding(.horizontal)
                         }
@@ -126,12 +143,6 @@ struct TrashView: View {
         Task { @MainActor in
             await viewModel.secureEmptyTrash()
         }
-    }
-
-    private func iconForURL(_ url: URL) -> String {
-        var isDir: ObjCBool = false
-        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-        return isDir.boolValue ? "folder" : "doc"
     }
 
     private func resultView(_ result: CleanupResult) -> some View {

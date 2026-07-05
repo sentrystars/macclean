@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 @Observable
 final class TrashViewModel {
-    var trashItems: [URL] = []
+    var trashItems: [ScanItem] = []
     var trashSize: Int64 = 0
     var isEmptying = false
     var result: CleanupResult?
@@ -12,7 +12,8 @@ final class TrashViewModel {
 
     func refresh() async {
         trashSize = await trashService.getTrashSize()
-        trashItems = await trashService.getTrashContents()
+        let items = await trashService.getTrashContents()
+        trashItems = items
     }
 
     func emptyTrash() async {

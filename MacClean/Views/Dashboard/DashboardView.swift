@@ -4,6 +4,7 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var cleanupVM = CleanupViewModel()
     @State private var showSmartScan = false
+    @State private var cleanupHistory = CleanupHistory.shared
     @Environment(AppViewModel.self) private var appVM
 
     var body: some View {
@@ -26,6 +27,9 @@ struct DashboardView: View {
 
                     // Quick Actions
                     quickActionsSection
+
+                    // Recent Cleanup
+                    recentCleanupSection
 
                     // Category Grid
                     categoryGridSection
@@ -217,7 +221,83 @@ struct DashboardView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Category Grid (simplified)
+    // MARK: - Recent Cleanup
+    private var recentCleanupSection: some View {
+        guard let lastDate = cleanupHistory.lastCleanupDate else {
+            return AnyView(EmptyView())
+        }
+        let lastFreed = cleanupHistory.lastFreedBytes
+        let totalFreed = cleanupHistory.totalFreedBytes
+
+        return AnyView(
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Recent Cleanup")
+                    .font(.title2.bold())
+
+                HStack(spacing: 16) {
+                    // Last cleanup date
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.title3)
+                            .foregroundColor(.appAccent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Last cleaned")
+                                .font(.caption)
+                                .foregroundColor(.textSecondary)
+                            Text(lastDate, style: .relative)
+                                .font(.body.bold())
+                            + Text(" ago")
+                                .font(.body)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Divider()
+                        .frame(height: 40)
+
+                    // Last freed
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.title3)
+                            .foregroundColor(.riskSafe)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Last freed")
+                                .font(.caption)
+                                .foregroundColor(.textSecondary)
+                            FileSizeText(bytes: lastFreed, font: .body.bold(), color: .riskSafe)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if totalFreed > lastFreed {
+                        Divider()
+                            .frame(height: 40)
+
+                        // Total freed
+                        HStack(spacing: 10) {
+                            Image(systemName: "chart.bar.fill")
+                                .font(.title3)
+                                .foregroundColor(.appAccent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Total freed")
+                                    .font(.caption)
+                                    .foregroundColor(.textSecondary)
+                                FileSizeText(bytes: totalFreed, font: .body.bold(), color: .appAccent)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding()
+                .background(Color.appCard)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .appShadow, radius: 2)
+            }
+        )
+    }
+
+    // MARK: - Explore Tools
+
     private var categoryGridSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Explore Tools")

@@ -13,7 +13,7 @@ struct DeepCleanView: View {
                         .foregroundColor(.riskCaution)
                     Text("Deep Cleanup")
                         .font(.largeTitle.bold())
-                    Text("Target large, safe-to-delete files and caches")
+                    Text("System data, macOS caches, Xcode artifacts, and VM images")
                         .foregroundColor(.textSecondary)
                 }
 
@@ -37,14 +37,25 @@ struct DeepCleanView: View {
                     scanningSection
                 }
 
-                // Items list
                 if !viewModel.deepItems.isEmpty {
                     itemsList
                 }
 
-                // Results
                 if !viewModel.results.isEmpty {
                     resultsSection
+                }
+
+                if let err = viewModel.error {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundColor(.riskCaution)
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(.textSecondary)
+                    }
+                    .padding()
+                    .background(Color.riskCaution.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
             .padding(24)
@@ -69,6 +80,8 @@ struct DeepCleanView: View {
                 .scaleEffect(1.5)
             Text("Scanning for deep cleanup items...")
                 .foregroundColor(.textSecondary)
+            Button("Cancel", role: .cancel) { viewModel.cancel() }
+                .buttonStyle(.bordered)
         }
         .padding(40)
         .background(Color.appCard)
@@ -76,11 +89,30 @@ struct DeepCleanView: View {
     }
 
     private var itemsList: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
+            // Summary and actions bar
             HStack {
-                Text("Found \(viewModel.deepItems.count) items")
-                    .font(.headline)
+                let totalSize = viewModel.deepItems.reduce(0) { $0 + $1.sizeBytes }
+                let selectedSize = viewModel.deepItems.filter(\.isSelected).reduce(0) { $0 + $1.sizeBytes }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Found \(viewModel.deepItems.count) items")
+                        .font(.headline)
+                    Text("\(FileSizeFormatter.string(from: totalSize)) total — \(FileSizeFormatter.string(from: selectedSize)) selected")
+                        .font(.caption)
+                        .foregroundColor(.textSecondary)
+                }
                 Spacer()
+
+                Button("Select All") {
+                    for idx in viewModel.deepItems.indices { viewModel.deepItems[idx].isSelected = true }
+                }
+                .buttonStyle(.borderless)
+
+                Button("Deselect All") {
+                    for idx in viewModel.deepItems.indices { viewModel.deepItems[idx].isSelected = false }
+                }
+                .buttonStyle(.borderless)
+
                 Button(action: { Task { await viewModel.cleanSelected() } }) {
                     Label("Clean Selected", systemImage: "trash")
                 }
@@ -94,12 +126,87 @@ struct DeepCleanView: View {
                     .scaleEffect(0.8)
             }
 
-            ForEach(viewModel.deepItems) { item in
-                DangerItemCard(item: item) {
-                    viewModel.toggleItem(item.id)
+            // Group items by storage bucket
+            let groups = ["System Data", "macOS", "Application Caches"]
+            ForEach(groups, id: \.self) { groupName in
+                let groupItems = viewModel.deepItems.filter { $0.category.group == groupName }
+                if !groupItems.isEmpty {
+                    let grouped = Dictionary(grouping: groupItems) { $0.category }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(groupName)
+                            .font(.title3.bold())
+                            .foregroundColor(.appAccent)
+                            .padding(.top, 4)
+
+                        ForEach(grouped.keys.sorted(by: { $0.displayName < $1.displayName }), id: \.self) { category in
+                            deepCategorySection(category, items: grouped[category]!)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private func deepCategorySection(_ category: CleanupCategory, items: [ScanItem]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: category.iconName)
+                    .foregroundColor(category.color)
+                Text(category.displayName)
+                    .font(.headline)
+                Spacer()
+                let total = items.reduce(0) { $0 + $1.sizeBytes }
+                Text(FileSizeFormatter.string(from: total))
+                    .font(.subheadline.bold())
+                    .foregroundColor(.appAccent)
+            }
+
+            ForEach(items) { item in
+                HStack {
+                    Button(action: { viewModel.toggleItem(item.id) }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: item.isSelected ? "checkmark.square.fill" : "square")
+                                .foregroundColor(item.isSelected ? .appAccent : .textSecondary)
+                                .font(.system(size: 18))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.subcategory ?? item.url.lastPathComponent)
+                                    .font(.body)
+                                    .foregroundColor(.textPrimary)
+                                if let modified = item.lastModifiedFormatted {
+                                    Text(modified)
+                                        .font(.caption)
+                                        .foregroundColor(.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                    } label: {
+                        Image(systemName: "arrow.right.circle")
+                            .foregroundColor(.appAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reveal in Finder")
+
+                    StatusIcon(riskLevel: category.riskLevel)
+                        .font(.caption)
+
+                    Text(item.sizeFormatted)
+                        .font(.system(.body, design: .rounded).monospacedDigit())
+                        .foregroundColor(.textSecondary)
+                        .frame(width: 80, alignment: .trailing)
+                }
+                .padding(.leading, 12)
+            }
+        }
+        .padding()
+        .background(Color.appCard)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var resultsSection: some View {
@@ -121,65 +228,15 @@ struct DeepCleanView: View {
                 .background(Color.appCard)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
+
+            Button(action: { viewModel.results = []; viewModel.error = nil }) {
+                Label("Done", systemImage: "checkmark")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
         .padding()
         .background(Color.riskSafe.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// MARK: - Danger Item Card
-struct DangerItemCard: View {
-    let item: ScanItem
-    let onToggle: () -> Void
-
-    var body: some View {
-        HStack {
-            Button(action: onToggle) {
-                HStack(spacing: 10) {
-                    Image(systemName: item.isSelected ? "checkmark.square.fill" : "square")
-                        .foregroundColor(item.isSelected ? .appAccent : .textSecondary)
-                        .font(.title3)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Image(systemName: item.category.iconName)
-                                .foregroundColor(item.category.color)
-                            Text(item.subcategory ?? item.url.lastPathComponent)
-                                .font(.body)
-                        }
-                        Text(item.category.description)
-                            .font(.caption)
-                            .foregroundColor(.textSecondary)
-                        if let modified = item.lastModifiedFormatted {
-                            Text("Last modified: \(modified)")
-                                .font(.caption2)
-                                .foregroundColor(.textSecondary)
-                        }
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([item.url])
-            } label: {
-                Image(systemName: "arrow.right.circle")
-                    .foregroundColor(.appAccent)
-            }
-            .buttonStyle(.plain)
-            .help("Reveal in Finder")
-
-            VStack(alignment: .trailing, spacing: 4) {
-                StatusIcon(riskLevel: item.category.riskLevel)
-                FileSizeText(bytes: item.sizeBytes, font: .caption.monospacedDigit(), color: .textSecondary)
-            }
-        }
-        .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: .appShadow, radius: 2)
     }
 }

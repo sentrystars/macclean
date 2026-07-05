@@ -13,8 +13,8 @@ struct CleanupCategoriesView: View {
                     categoriesGrid
                 case .scanning(let progress):
                     scanningView(progress)
-                case .results(let items):
-                    resultsView(items)
+                case .results:
+                    resultsView()
                 case .cleaning(let progress):
                     CleanupProgressView(progress: progress, onCancel: { viewModel.cancelCleanup() })
                 case .complete(let results):
@@ -61,7 +61,9 @@ struct CleanupCategoriesView: View {
                             .foregroundColor(.textSecondary)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 280))], spacing: 12) {
                             ForEach(cats) { category in
-                                CategoryCardView(category: category, sizeBytes: 0)
+                                CategoryCardView(category: category, sizeBytes: 0) {
+                                    Task { await viewModel.startScan() }
+                                }
                             }
                         }
                     }
@@ -107,16 +109,16 @@ struct CleanupCategoriesView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func resultsView(_ items: [ScanItem]) -> some View {
+    private func resultsView() -> some View {
         VStack(spacing: 16) {
             // Summary bar
             HStack {
-                let totalSize = items.reduce(0) { $0 + $1.sizeBytes }
-                let selectedSize = items.filter { viewModel.selectedItems.contains($0.id) }
+                let totalSize = viewModel.sortedScanItems.reduce(0) { $0 + $1.sizeBytes }
+                let selectedSize = viewModel.sortedScanItems.filter { viewModel.selectedItems.contains($0.id) }
                     .reduce(0) { $0 + $1.sizeBytes }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Found \(items.count) items")
+                    Text("Found \(viewModel.scanItems.count) items")
                         .font(.headline)
                     Text("\(FileSizeFormatter.string(from: totalSize)) total — \(FileSizeFormatter.string(from: selectedSize)) selected")
                         .font(.caption)
@@ -124,8 +126,16 @@ struct CleanupCategoriesView: View {
                 }
                 Spacer()
 
+                Picker("Sort", selection: Bindable(viewModel).sortBy) {
+                    ForEach(CleanupViewModel.SortOption.allCases, id: \.self) { opt in
+                        Text(opt.rawValue).tag(opt)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 140)
+
                 Button("Select All") {
-                    viewModel.selectedItems = Set(items.map(\.id))
+                    viewModel.selectedItems = Set(viewModel.scanItems.map(\.id))
                 }
                 .buttonStyle(.borderless)
 
@@ -137,9 +147,9 @@ struct CleanupCategoriesView: View {
             }
 
             // Items list grouped by three main buckets
-            let groups = ["Application Caches", "System Data", "macOS"]
+            let groups = ["System Data", "Application Caches", "macOS"]
             ForEach(groups, id: \.self) { groupName in
-                let groupItems = items.filter { $0.category.group == groupName }
+                let groupItems = viewModel.sortedScanItems.filter { $0.category.group == groupName }
                 if !groupItems.isEmpty {
                     let grouped = Dictionary(grouping: groupItems) { $0.category }
                     VStack(alignment: .leading, spacing: 8) {

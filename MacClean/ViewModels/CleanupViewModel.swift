@@ -28,6 +28,23 @@ final class CleanupViewModel {
     var scanItems: [ScanItem] = []
     var selectedItems = Set<UUID>()
     var results: [CleanupResult] = []
+    var sortBy: SortOption = .sizeDesc
+
+    enum SortOption: String, CaseIterable {
+        case sizeDesc = "Largest First"
+        case sizeAsc = "Smallest First"
+        case name = "By Name"
+        case category = "By Category"
+    }
+
+    var sortedScanItems: [ScanItem] {
+        switch sortBy {
+        case .sizeDesc: return scanItems.sorted { $0.sizeBytes > $1.sizeBytes }
+        case .sizeAsc: return scanItems.sorted { $0.sizeBytes < $1.sizeBytes }
+        case .name: return scanItems.sorted { ($0.subcategory ?? $0.url.lastPathComponent) < ($1.subcategory ?? $1.url.lastPathComponent) }
+        case .category: return scanItems.sorted { $0.category.displayName < $1.category.displayName }
+        }
+    }
 
     private let scanService = ScanService()
     private let cleanupService = CleanupService()

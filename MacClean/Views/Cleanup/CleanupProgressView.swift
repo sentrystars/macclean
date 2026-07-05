@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CleanupProgressView: View {
     let progress: CleanProgress
+    var onCancel: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 24) {
@@ -39,10 +40,15 @@ struct CleanupProgressView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+
+            if let onCancel {
+                Button("Cancel", role: .cancel, action: onCancel)
+                    .buttonStyle(.bordered)
+            }
         }
         .padding(40)
         .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.05), radius: 4)
+        .shadow(color: .appShadow, radius: 4)
     }
 }

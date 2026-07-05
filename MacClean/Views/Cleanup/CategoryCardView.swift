@@ -5,6 +5,7 @@ struct CategoryCardView: View {
     let sizeBytes: Int64
     var isSelected: Bool = false
     var onTap: (() -> Void)?
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -43,9 +44,15 @@ struct CategoryCardView: View {
         .padding(12)
         .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.04), radius: 2)
+        .shadow(color: .appShadow, radius: isHovering ? 4 : 2)
+        .scaleEffect(isHovering ? 1.02 : 1)
         .contentShape(Rectangle())
         .onTapGesture { onTap?() }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
     }
 }
 

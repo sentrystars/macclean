@@ -40,22 +40,27 @@ final class CleanupViewModel {
             filesScanned: 0,
             bytesFound: 0,
             categoriesCompleted: 0,
-            totalCategories: 8
+            totalCategories: 9
         ))
 
         scanItems = []
         var totalBytes: Int64 = 0
         var categoriesDone = 0
 
-        // Scan each category
+        // Application Caches
         await scanCategory({ await scanService.scanUserCaches().collect() }, name: "User Caches", totalBytes: &totalBytes, categoriesDone: &categoriesDone)
         await scanCategory({ await scanService.scanUserLogs().collect() }, name: "User Logs", totalBytes: &totalBytes, categoriesDone: &categoriesDone)
         await scanCategory({ await scanService.scanContainerCaches().collect() }, name: "Container Caches", totalBytes: &totalBytes, categoriesDone: &categoriesDone)
 
         let appCaches = await scanService.scanAppCaches()
         scanItems.append(contentsOf: appCaches)
-        let appBytes = appCaches.reduce(0) { $0 + $1.sizeBytes }
-        totalBytes += appBytes
+        totalBytes += appCaches.reduce(0) { $0 + $1.sizeBytes }
+        categoriesDone += 1
+
+        // System Data
+        let systemDataItems = await scanService.scanSystemData()
+        scanItems.append(contentsOf: systemDataItems)
+        totalBytes += systemDataItems.reduce(0) { $0 + $1.sizeBytes }
         categoriesDone += 1
 
         let vmItems = await scanService.scanClaudeVM()
@@ -66,6 +71,12 @@ final class CleanupViewModel {
         let xcodeItems = await scanService.scanXcodeData()
         scanItems.append(contentsOf: xcodeItems)
         totalBytes += xcodeItems.reduce(0) { $0 + $1.sizeBytes }
+        categoriesDone += 1
+
+        // macOS
+        let macItems = await scanService.scanMacOSSystem()
+        scanItems.append(contentsOf: macItems)
+        totalBytes += macItems.reduce(0) { $0 + $1.sizeBytes }
         categoriesDone += 1
 
         if let trashItem = await scanService.scanTrash() {
@@ -90,7 +101,7 @@ final class CleanupViewModel {
             filesScanned: scanItems.count,
             bytesFound: totalBytes,
             categoriesCompleted: categoriesDone,
-            totalCategories: 8
+            totalCategories: 9
         ))
     }
 
@@ -152,6 +163,16 @@ final class CleanupViewModel {
         results.append(summaryResult)
 
         phase = .complete(results: results)
+    }
+
+    func cancelScan() {
+        Task { await scanService.cancel() }
+        phase = .idle
+    }
+
+    func cancelCleanup() {
+        Task { await cleanupService.cancel() }
+        phase = .idle
     }
 
     func reset() {

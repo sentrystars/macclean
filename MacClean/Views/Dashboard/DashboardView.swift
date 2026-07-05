@@ -61,18 +61,27 @@ struct DashboardView: View {
                     ProgressView()
                         .scaleEffect(0.8)
                 } else {
-                    Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await viewModel.refreshStorageInfo() }
+                    HStack(spacing: 12) {
+                        if let last = viewModel.lastRefreshed {
+                            Text(last, style: .relative)
+                                .font(.caption)
+                                .foregroundColor(.textSecondary)
+                            + Text(" ago")
+                                .font(.caption)
+                                .foregroundColor(.textSecondary)
+                        }
+                        Button("Refresh", systemImage: "arrow.clockwise") {
+                            Task { await viewModel.refreshStorageInfo() }
+                        }
+                        .buttonStyle(.borderless)
                     }
-                    .buttonStyle(.borderless)
                 }
             }
 
             HStack(spacing: 32) {
                 StorageDonutChart(
                     segments: [
-                        StorageSegment(value: Double(info.usedBytes - (info.systemDataBytes ?? 0)), color: .storageUsed, label: "Apps"),
-                        StorageSegment(value: Double(info.systemDataBytes ?? 0), color: .storageSystem, label: "System"),
+                        StorageSegment(value: Double(info.usedBytes), color: .storageUsed, label: "Used"),
                         StorageSegment(value: Double(info.freeBytes), color: .storageFree, label: "Free"),
                     ],
                     size: 140
@@ -81,7 +90,6 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     statRow(label: "Total", value: FileSizeFormatter.string(from: info.totalBytes), color: .textPrimary)
                     statRow(label: "Used", value: FileSizeFormatter.string(from: info.usedBytes), color: .storageUsed)
-                    statRow(label: "System Data", value: info.systemDataBytes.map { FileSizeFormatter.string(from: $0) } ?? "—", color: .storageSystem)
                     statRow(label: "Free", value: FileSizeFormatter.string(from: info.freeBytes), color: .riskSafe)
                     if let cache = info.cacheBytes {
                         statRow(label: "Caches", value: FileSizeFormatter.string(from: cache), color: .orange)
@@ -89,12 +97,15 @@ struct DashboardView: View {
                     if let trash = info.trashBytes {
                         statRow(label: "Trash", value: FileSizeFormatter.string(from: trash), color: .red)
                     }
+                    let known = (info.cacheBytes ?? 0) + (info.trashBytes ?? 0)
+                    let other = max(0, info.usedBytes - known)
+                    statRow(label: "Other", value: FileSizeFormatter.string(from: other), color: .textSecondary)
                 }
             }
             .padding()
             .background(Color.appCard)
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.05), radius: 4)
+            .shadow(color: .appShadow, radius: 4)
         }
     }
 
@@ -169,7 +180,7 @@ struct DashboardView: View {
             .padding()
             .background(Color.appCard)
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.05), radius: 4)
+            .shadow(color: .appShadow, radius: 4)
         }
         .buttonStyle(.plain)
     }
@@ -224,7 +235,7 @@ struct DashboardView: View {
                 .padding()
                 .background(Color.appCard)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .shadow(color: .black.opacity(0.05), radius: 4)
+                .shadow(color: .appShadow, radius: 4)
 
             case .results(let items):
                 scanResultsView(items: items)

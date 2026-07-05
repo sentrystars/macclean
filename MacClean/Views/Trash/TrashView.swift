@@ -19,8 +19,12 @@ struct TrashView: View {
                         Text("\(FileSizeFormatter.string(from: viewModel.trashSize)) — \(viewModel.trashItems.count) items")
                             .foregroundColor(.textSecondary)
                     } else {
-                        Text("Trash is empty")
-                            .foregroundColor(.textSecondary)
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.riskSafe)
+                            Text("Trash is empty")
+                        }
+                        .foregroundColor(.textSecondary)
                     }
                 }
 

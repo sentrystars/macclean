@@ -76,8 +76,7 @@ struct DiagnosticsView: View {
             HStack(spacing: 32) {
                 StorageDonutChart(
                     segments: [
-                        StorageSegment(value: Double(info.usedBytes - (info.systemDataBytes ?? 0)), color: .storageUsed, label: "Apps"),
-                        StorageSegment(value: Double(info.systemDataBytes ?? 0), color: .storageSystem, label: "System"),
+                        StorageSegment(value: Double(info.usedBytes), color: .storageUsed, label: "Used"),
                         StorageSegment(value: Double(info.freeBytes), color: .storageFree, label: "Free"),
                     ],
                     size: 120

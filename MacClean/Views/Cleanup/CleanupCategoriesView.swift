@@ -16,7 +16,7 @@ struct CleanupCategoriesView: View {
                 case .results(let items):
                     resultsView(items)
                 case .cleaning(let progress):
-                    CleanupProgressView(progress: progress)
+                    CleanupProgressView(progress: progress, onCancel: { viewModel.cancelCleanup() })
                 case .complete(let results):
                     CleanupResultsView(results: results) {
                         viewModel.reset()
@@ -51,9 +51,21 @@ struct CleanupCategoriesView: View {
     }
 
     private var categoriesGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280))], spacing: 12) {
-            ForEach(CleanupCategory.allCases, id: \.self) { category in
-                CategoryCardView(category: category, sizeBytes: 0)
+        VStack(spacing: 20) {
+            ForEach(["Application Caches", "System Data", "macOS"], id: \.self) { groupName in
+                let cats = CleanupCategory.allCases.filter { $0.group == groupName }
+                if !cats.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(groupName)
+                            .font(.headline)
+                            .foregroundColor(.textSecondary)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280))], spacing: 12) {
+                            ForEach(cats) { category in
+                                CategoryCardView(category: category, sizeBytes: 0)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -84,6 +96,11 @@ struct CleanupCategoriesView: View {
                     .font(.caption)
                     .foregroundColor(.textSecondary)
             }
+
+            Button("Cancel", role: .cancel) {
+                viewModel.cancelScan()
+            }
+            .buttonStyle(.bordered)
         }
         .padding(40)
         .background(Color.appCard)
@@ -119,10 +136,23 @@ struct CleanupCategoriesView: View {
                 .disabled(viewModel.selectedItems.isEmpty)
             }
 
-            // Items list grouped by category
-            let grouped = Dictionary(grouping: items) { $0.category }
-            ForEach(grouped.keys.sorted { $0.displayName < $1.displayName }, id: \.self) { category in
-                categorySection(category, items: grouped[category]!)
+            // Items list grouped by three main buckets
+            let groups = ["Application Caches", "System Data", "macOS"]
+            ForEach(groups, id: \.self) { groupName in
+                let groupItems = items.filter { $0.category.group == groupName }
+                if !groupItems.isEmpty {
+                    let grouped = Dictionary(grouping: groupItems) { $0.category }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(groupName)
+                            .font(.title3.bold())
+                            .foregroundColor(.appAccent)
+                            .padding(.top, 4)
+
+                        ForEach(grouped.keys.sorted { $0.displayName < $1.displayName }, id: \.self) { category in
+                            categorySection(category, items: grouped[category]!)
+                        }
+                    }
+                }
             }
         }
     }
@@ -159,7 +189,14 @@ struct CleanupCategoriesView: View {
                     }
                     .toggleStyle(.checkbox)
 
-                    Spacer()
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                    } label: {
+                        Image(systemName: "arrow.right.circle")
+                            .foregroundColor(.appAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reveal in Finder")
 
                     StatusIcon(riskLevel: category.riskLevel)
                         .font(.caption)

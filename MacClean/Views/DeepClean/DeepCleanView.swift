@@ -163,6 +163,15 @@ struct DangerItemCard: View {
 
             Spacer()
 
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([item.url])
+            } label: {
+                Image(systemName: "arrow.right.circle")
+                    .foregroundColor(.appAccent)
+            }
+            .buttonStyle(.plain)
+            .help("Reveal in Finder")
+
             VStack(alignment: .trailing, spacing: 4) {
                 StatusIcon(riskLevel: item.category.riskLevel)
                 FileSizeText(bytes: item.sizeBytes, font: .caption.monospacedDigit(), color: .textSecondary)
@@ -171,6 +180,6 @@ struct DangerItemCard: View {
         .padding()
         .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.03), radius: 2)
+        .shadow(color: .appShadow, radius: 2)
     }
 }

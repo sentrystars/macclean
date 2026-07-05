@@ -8,10 +8,9 @@ struct MacCleanApp: App {
         WindowGroup {
             ContentView()
                 .environment(viewModel)
-                .preferredColorScheme(.light)
         }
         .windowStyle(.titleBar)
-        .windowResizability(.contentMinSize)
+        .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }

@@ -307,4 +307,109 @@ actor ScanService {
             isDirectory: true
         )
     }
+
+    // MARK: - System Data
+    func scanSystemData() async -> [ScanItem] {
+        var items: [ScanItem] = []
+
+        // /Library/Caches (system-wide, not user)
+        let libraryCaches = URL(fileURLWithPath: "/Library/Caches")
+        if fileManager.fileExists(atPath: libraryCaches.path) {
+            let size = fileManager.directorySize(at: libraryCaches)
+            if size > 0 {
+                items.append(ScanItem(url: libraryCaches, category: .systemData, subcategory: "System Caches", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // /System/Library/Caches
+        let systemCaches = URL(fileURLWithPath: "/System/Library/Caches")
+        if fileManager.fileExists(atPath: systemCaches.path) {
+            let size = fileManager.directorySize(at: systemCaches)
+            if size > 0 {
+                items.append(ScanItem(url: systemCaches, category: .systemData, subcategory: "System Library Caches", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // /private/var/tmp
+        let varTmp = URL(fileURLWithPath: "/private/var/tmp")
+        if fileManager.fileExists(atPath: varTmp.path) {
+            let size = fileManager.directorySize(at: varTmp)
+            if size > 0 {
+                items.append(ScanItem(url: varTmp, category: .systemData, subcategory: "System Temp (var/tmp)", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // /private/var/folders (app sandbox temp)
+        let varFolders = URL(fileURLWithPath: "/private/var/folders")
+        if fileManager.fileExists(atPath: varFolders.path) {
+            let size = fileManager.directorySize(at: varFolders)
+            if size > 0 {
+                items.append(ScanItem(url: varFolders, category: .systemData, subcategory: "App Sandbox Temp", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // iOS Backups
+        let iosBackup = URL.homeDirectory.appendingPathComponent(AppConstants.iOSBackupPath)
+        if fileManager.fileExists(atPath: iosBackup.path) {
+            let size = fileManager.directorySize(at: iosBackup)
+            if size > 0 {
+                items.append(ScanItem(url: iosBackup, category: .systemData, subcategory: "iOS Backups", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // Sleep image
+        let sleepImage = URL(fileURLWithPath: "/private/var/vm/sleepimage")
+        if fileManager.fileExists(atPath: sleepImage.path) {
+            let attrs = try? fileManager.attributesOfItem(atPath: sleepImage.path)
+            let size = attrs?[.size] as? Int64 ?? 0
+            if size > 0 {
+                items.append(ScanItem(url: sleepImage, category: .systemData, subcategory: "Sleep Image", sizeBytes: size, isDirectory: false))
+            }
+        }
+
+        return items
+    }
+
+    // MARK: - macOS System
+    func scanMacOSSystem() async -> [ScanItem] {
+        var items: [ScanItem] = []
+
+        // Font caches
+        let fontCaches = URL.homeDirectory.appendingPathComponent("Library/Caches/com.apple.ATS")
+        if fileManager.fileExists(atPath: fontCaches.path) {
+            let size = fileManager.directorySize(at: fontCaches)
+            if size > 0 {
+                items.append(ScanItem(url: fontCaches, category: .macOSSystem, subcategory: "Font Caches", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // Old system diagnostic reports
+        let diagnosticReports = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports")
+        if fileManager.fileExists(atPath: diagnosticReports.path) {
+            let size = fileManager.directorySize(at: diagnosticReports)
+            if size > 0 {
+                items.append(ScanItem(url: diagnosticReports, category: .macOSSystem, subcategory: "Diagnostic Reports", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // User diagnostic reports
+        let userDiagnostics = URL.homeDirectory.appendingPathComponent("Library/Logs/DiagnosticReports")
+        if fileManager.fileExists(atPath: userDiagnostics.path) {
+            let size = fileManager.directorySize(at: userDiagnostics)
+            if size > 0 {
+                items.append(ScanItem(url: userDiagnostics, category: .macOSSystem, subcategory: "User Diagnostic Reports", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        // Accessibility font caches
+        let fontCacheDir = URL.homeDirectory.appendingPathComponent("Library/Caches/com.apple.FontRegistry")
+        if fileManager.fileExists(atPath: fontCacheDir.path) {
+            let size = fileManager.directorySize(at: fontCacheDir)
+            if size > 0 {
+                items.append(ScanItem(url: fontCacheDir, category: .macOSSystem, subcategory: "Font Registry Caches", sizeBytes: size, isDirectory: true))
+            }
+        }
+
+        return items
+    }
 }

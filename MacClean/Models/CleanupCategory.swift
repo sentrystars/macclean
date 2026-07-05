@@ -20,6 +20,20 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
     case trash
     case systemTemp
     case containerCaches
+    case systemData
+    case macOSSystem
+
+    /// Groups categories into the three Mac storage buckets
+    var group: String {
+        switch self {
+        case .userCaches, .systemCaches, .appCaches, .containerCaches:
+            return "Application Caches"
+        case .systemData, .userLogs, .systemLogs, .systemTemp, .dnsCache, .xcodeData, .iosSimulators, .claudeVM, .trash:
+            return "System Data"
+        case .macOSSystem:
+            return "macOS"
+        }
+    }
 
     var displayName: String {
         switch self {
@@ -35,6 +49,8 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .trash: return "Trash"
         case .systemTemp: return "System Temp Files"
         case .containerCaches: return "Container Caches"
+        case .systemData: return "System Data"
+        case .macOSSystem: return "macOS System"
         }
     }
 
@@ -52,6 +68,8 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .trash: return "trash"
         case .systemTemp: return "clock.arrow.circlepath"
         case .containerCaches: return "square.grid.3x3"
+        case .systemData: return "externaldrive.fill"
+        case .macOSSystem: return "menubar.dock.rectangle"
         }
     }
 
@@ -69,12 +87,14 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .trash: return .red
         case .systemTemp: return .orange
         case .containerCaches: return .teal
+        case .systemData: return .brown
+        case .macOSSystem: return .secondary
         }
     }
 
     var requiresSudo: Bool {
         switch self {
-        case .systemCaches, .systemLogs, .systemTemp, .dnsCache:
+        case .systemCaches, .systemLogs, .systemTemp, .dnsCache, .systemData:
             return true
         default:
             return false
@@ -85,7 +105,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .claudeVM, .xcodeData, .iosSimulators:
             return .caution
-        case .dnsCache, .systemTemp:
+        case .dnsCache, .systemTemp, .systemData:
             return .caution
         case .trash:
             return .safe
@@ -108,13 +128,15 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .trash: return "Items in the trash bin"
         case .systemTemp: return "Temporary system files older than 1 day"
         case .containerCaches: return "App sandbox container caches"
+        case .systemData: return "System caches, temp files, iOS backups, and VM sleep image"
+        case .macOSSystem: return "macOS system files, localized resources, and font caches"
         }
     }
 
     var sidebarDestination: SidebarItem {
         switch self {
         case .trash: return .trash
-        case .claudeVM, .xcodeData, .iosSimulators, .dnsCache, .systemTemp:
+        case .claudeVM, .xcodeData, .iosSimulators, .dnsCache, .systemTemp, .systemData, .macOSSystem:
             return .deepCleanup
         default:
             return .cacheCleanup

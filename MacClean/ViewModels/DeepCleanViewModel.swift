@@ -10,6 +10,8 @@ final class DeepCleanViewModel {
     var error: String?
 
     private let scanService = ScanService()
+    private var isCancelled = false
+
     private let cleanupService = CleanupService()
 
     func scan() async {
@@ -54,6 +56,14 @@ final class DeepCleanViewModel {
 
         isCleaning = false
         await scan()
+    }
+
+    func cancel() {
+        isCancelled = true
+        Task { await scanService.cancel() }
+        Task { await cleanupService.cancel() }
+        isScanning = false
+        isCleaning = false
     }
 
     func toggleItem(_ id: UUID) {

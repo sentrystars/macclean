@@ -48,7 +48,11 @@ struct DeepCleanView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground)
-        .task { hasFullDiskAccess = viewModel.hasFullDiskAccess() }
+        .task {
+            hasFullDiskAccess = await Task.detached(priority: .utility) {
+                MaintenanceService().hasFullDiskAccess()
+            }.value
+        }
         .alert("确认清理", isPresented: $showCleanConfirm) {
             Button("取消", role: .cancel) {}
             Button("清理", role: .destructive) {

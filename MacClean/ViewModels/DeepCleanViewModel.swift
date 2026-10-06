@@ -100,10 +100,6 @@ final class DeepCleanViewModel {
         runningMaintenance = nil
     }
 
-    func hasFullDiskAccess() -> Bool {
-        maintenanceService.hasFullDiskAccess()
-    }
-
     // MARK: - 选择
 
     func toggleItem(_ id: UUID) {

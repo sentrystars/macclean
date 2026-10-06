@@ -4,7 +4,6 @@ import SwiftUI
 struct MacCleanApp: App {
 
     @State private var viewModel = AppViewModel()
-    @AppStorage(SettingsKey.showMenuBarIcon) private var showMenuBarIcon = true
 
     init() {
         SettingsKey.registerDefaults()
@@ -29,11 +28,9 @@ struct MacCleanApp: App {
             }
         }
 
-        MenuBarExtra(isInserted: $showMenuBarIcon) {
+        MenuBarExtra("MacClean", systemImage: "leaf.fill") {
             MenuBarView()
                 .environment(viewModel)
-        } label: {
-            Label("MacClean", systemImage: "leaf.fill")
         }
         .menuBarExtraStyle(.window)
 

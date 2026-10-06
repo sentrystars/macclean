@@ -10,7 +10,6 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.lowDiskAlertEnabled) private var lowDiskAlertEnabled = false
     @AppStorage(SettingsKey.lowDiskThresholdGB) private var lowDiskThresholdGB = 10
     @AppStorage(SettingsKey.weeklyAutoCleanEnabled) private var weeklyAutoCleanEnabled = false
-    @AppStorage(SettingsKey.showMenuBarIcon) private var showMenuBarIcon = true
     private let scheduler = AutoCleanScheduler.shared
 
     @State private var exclusions: [String] = UserDefaults.standard.stringArray(forKey: SettingsKey.excludedPaths) ?? []
@@ -70,10 +69,6 @@ struct SettingsView: View {
                         NSWorkspace.shared.open(url)
                     }
                 }
-            }
-
-            Section("界面") {
-                Toggle("在菜单栏显示 MacClean 图标", isOn: $showMenuBarIcon)
             }
 
             Section("提醒与自动化") {

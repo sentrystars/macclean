@@ -30,7 +30,9 @@ final class DiagnosticsViewModel {
     func runFullDiagnostics() async {
         isScanning = true
         error = nil
-        hasFullDiskAccess = maintenanceService.hasFullDiskAccess()
+        hasFullDiskAccess = await Task.detached(priority: .utility) { [maintenanceService] in
+            maintenanceService.hasFullDiskAccess()
+        }.value
 
         await StorageStore.shared.refresh(force: true)
 

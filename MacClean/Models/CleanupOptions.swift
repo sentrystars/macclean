@@ -12,7 +12,6 @@ enum SettingsKey {
     static let lowDiskAlertEnabled = "MacClean.lowDiskAlertEnabled"
     static let lowDiskThresholdGB = "MacClean.lowDiskThresholdGB"
     static let weeklyAutoCleanEnabled = "MacClean.weeklyAutoCleanEnabled"
-    static let showMenuBarIcon = "MacClean.showMenuBarIcon"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -25,7 +24,6 @@ enum SettingsKey {
             lowDiskAlertEnabled: false,
             lowDiskThresholdGB: 10,
             weeklyAutoCleanEnabled: false,
-            showMenuBarIcon: true,
             excludedPaths: [String](),
         ])
     }

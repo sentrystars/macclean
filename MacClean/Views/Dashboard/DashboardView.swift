@@ -44,7 +44,10 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground)
         .task {
-            hasFullDiskAccess = MaintenanceService().hasFullDiskAccess()
+            // TCC 探测可能触发系统调用，放到后台线程，避免阻塞主线程
+            hasFullDiskAccess = await Task.detached(priority: .utility) {
+                MaintenanceService().hasFullDiskAccess()
+            }.value
             await viewModel.refreshStorageInfo()
         }
         .alert("确认清理", isPresented: $showCleanConfirm) {

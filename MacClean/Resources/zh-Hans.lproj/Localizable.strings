@@ -59,3 +59,6 @@
 "System Data" = "系统数据";
 "Developer" = "开发者";
 "Developer Caches" = "开发者缓存";
+
+/* 模拟器 */
+"Simulators" = "模拟器";

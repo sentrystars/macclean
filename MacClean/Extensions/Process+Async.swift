@@ -54,7 +54,8 @@ extension Process {
     static func run(
         executable: String,
         arguments: [String] = [],
-        timeout: TimeInterval = 120
+        timeout: TimeInterval = 120,
+        environment: [String: String]? = nil
     ) async throws -> CommandResult {
         guard FileManager.default.isExecutableFile(atPath: executable) else {
             throw ProcessError.executableNotFound(executable)
@@ -63,6 +64,11 @@ extension Process {
         let box = ProcessBox()
         box.process.executableURL = URL(fileURLWithPath: executable)
         box.process.arguments = arguments
+        if let environment {
+            var merged = ProcessInfo.processInfo.environment
+            merged.merge(environment) { _, new in new }
+            box.process.environment = merged
+        }
         box.process.standardOutput = box.outPipe
         box.process.standardError = box.errPipe
 

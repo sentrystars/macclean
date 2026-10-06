@@ -23,6 +23,7 @@ macOS 系统清理与分析工具。Swift 6 + SwiftUI 编写，"安全优先"：
 | **重复文件查找** Duplicate Finder | 按大小分桶 + 流式 SHA-256；每组默认保留最早一份，其余移入废纸篓 |
 | **隐私清理** Privacy | 浏览历史、Cookie、缓存、最近使用项；路径为代码内白名单，浏览器运行中拒绝执行 |
 | **启动项管理** Login Items | 展示 LaunchAgents / LaunchDaemons；用户级可启停或删除，系统级只读 |
+| **模拟器运行时管理** Simulators | 列出 Xcode 的 iOS/watchOS/tvOS/visionOS 运行时（含大小、最近使用、状态），支持单个删除、按"未使用天数"批量清理、清理不可用/过期；设备不可用项一并可清 |
 
 ### 智能与自动化
 
@@ -154,7 +155,6 @@ MacClean/
 - 本地化目前覆盖界面框架文案（zh-Hans）；正文为中文源语言，英文环境下会中英混排
 - 隐私清理暂未覆盖 Firefox（其 profile 目录名随机，需另外解析 `profiles.ini`）
 - 全局/系统级启动项出于安全考虑只读，需在「系统设置 → 通用 → 登录项」中管理
-- iOS 模拟器运行时（动辄十几 GB）目前只做展示，删除请在 Xcode → Settings → Platforms 操作
 - 系统通知需要用户授权；未授权时低磁盘提醒会被静默跳过
 - `/System/Library/Caches` 受 SIP 保护，即使已授权也可能无法删除
 - Liquid Glass 仅在 macOS 26+ 生效，低版本使用回退样式
@@ -162,7 +162,7 @@ MacClean/
 
 ### 路线图
 
-- 模拟器运行时管理（列出 + 调用 `simctl runtime delete`）
 - Firefox 隐私清理（解析 `profiles.ini`）
 - 英文 `en.lproj` 完整本地化
 - 清理策略的导入/导出与可配置白名单
+- 模拟器运行时下载/安装（目前只做删除与清理）

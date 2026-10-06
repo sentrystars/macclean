@@ -37,6 +37,8 @@ struct ContentView: View {
             LoginItemsView()
         case .systemData:
             SystemDataView()
+        case .simulators:
+            SimulatorRuntimeView()
         }
     }
 }

@@ -89,6 +89,10 @@ struct MacCleanTestRunner {
             ("开发者缓存：分类感知路由", DeveloperCacheTests.routing),
             ("系统数据：构成项定义", SystemDataTests.specs),
             ("系统数据：缺失路径计为 0", SystemDataTests.sizeOfMissingPath),
+            ("模拟器：解析 runtime list -j", SimulatorRuntimeTests.parsingJSON),
+            ("模拟器：文本格式兜底解析", SimulatorRuntimeTests.parsingText),
+            ("模拟器：标识符安全校验", SimulatorRuntimeTests.identifierValidation),
+            ("模拟器：工具链候选路径", SimulatorRuntimeTests.toolchainCandidates),
         ]
 
         var passed = 0

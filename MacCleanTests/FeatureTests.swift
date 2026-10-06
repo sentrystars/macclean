@@ -181,3 +181,59 @@ enum SystemDataTests {
         try expectEqual(SystemDataAnalyzer.size(ofPath: "/definitely/not/here"), 0)
     }
 }
+
+enum SimulatorRuntimeTests {
+
+    static func parsingJSON() throws {
+        let json = #"{"8FC67D3A-6572-4AE8-B23F-DB62EF06CEA4":{"build":"24A5370g","deletable":true,"identifier":"8FC67D3A-6572-4AE8-B23F-DB62EF06CEA4","lastUsedAt":"2026-10-04T10:51:04Z","mountPath":"/Library/Developer/CoreSimulator/Volumes/iOS_24A5370g","platformIdentifier":"com.apple.platform.iphonesimulator","runtimeIdentifier":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","sizeBytes":8389757281,"state":"Ready","version":"27.0"}}"#
+        let runtimes = try SimulatorRuntimeParser.parse(json: Data(json.utf8))
+        try expectEqual(runtimes.count, 1)
+        let runtime = runtimes[0]
+        try expectEqual(runtime.platformName, "iOS")
+        try expectEqual(runtime.version, "27.0")
+        try expectEqual(runtime.build, "24A5370g")
+        try expectEqual(runtime.sizeBytes, 8_389_757_281)
+        try expect(runtime.isReady)
+        try expect(runtime.isDeletable)
+        try expectEqual(runtime.displayName, "iOS 27.0 (24A5370g)")
+        _ = try expectNotNil(runtime.lastUsedAt)
+    }
+
+    static func parsingText() throws {
+        let text = [
+            "== Disk Images ==",
+            "-- iOS --",
+            "iOS 27.0 (24A5370g) - 8FC67D3A-6572-4AE8-B23F-DB62EF06CEA4 (Ready)",
+            "",
+            "Total Disk Images: 1 (7.8G)",
+        ].joined(separator: "\n")
+
+        let runtimes = SimulatorRuntimeParser.parse(text: text)
+        try expectEqual(runtimes.count, 1)
+        try expectEqual(runtimes[0].identifier, "8FC67D3A-6572-4AE8-B23F-DB62EF06CEA4")
+        try expectEqual(runtimes[0].platformName, "iOS")
+        try expectEqual(runtimes[0].version, "27.0")
+        try expectEqual(runtimes[0].build, "24A5370g")
+        try expect(runtimes[0].isReady)
+
+        // 回归：畸形行不应导致崩溃
+        let malformed = "Some (weird) - text ) (\n== Disk Images ==\n-- iOS --"
+        try expectEqual(SimulatorRuntimeParser.parse(text: malformed).count, 0)
+    }
+
+    static func identifierValidation() throws {
+        try expect(SimulatorRuntimeParser.isSafeIdentifier("8FC67D3A-6572-4AE8-B23F-DB62EF06CEA4"))
+        try expect(!SimulatorRuntimeParser.isSafeIdentifier("all"))
+        try expect(!SimulatorRuntimeParser.isSafeIdentifier(""))
+        try expect(!SimulatorRuntimeParser.isSafeIdentifier("8FC67D3A-6572-4AE8-B23F-DB62EF06CEA4; rm -rf /"))
+        try expect(!SimulatorRuntimeParser.isSafeIdentifier("8FC67D3A-6572-4AE8-B23F-DB62EF06CEA"))
+    }
+
+    static func toolchainCandidates() throws {
+        let candidates = SimulatorRuntimeManager.developerDirCandidates()
+        try expect(!candidates.isEmpty)
+        for dir in candidates {
+            try expect(dir.hasSuffix("/Contents/Developer"), "候选路径应以 Contents/Developer 结尾：\(dir)")
+        }
+    }
+}

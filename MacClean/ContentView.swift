@@ -35,6 +35,8 @@ struct ContentView: View {
             PrivacyCleanerView()
         case .loginItems:
             LoginItemsView()
+        case .systemData:
+            SystemDataView()
         }
     }
 }

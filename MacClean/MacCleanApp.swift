@@ -55,6 +55,7 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable {
     case privacy
     case storageAnalysis
     case loginItems
+    case systemData
 
     var id: String { rawValue }
 
@@ -69,6 +70,7 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable {
         case .duplicates: return String(localized: "Duplicate Finder")
         case .privacy: return String(localized: "Privacy")
         case .loginItems: return String(localized: "Login Items")
+        case .systemData: return String(localized: "System Data")
         }
     }
 
@@ -83,6 +85,7 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable {
         case .duplicates: return "doc.on.doc"
         case .privacy: return "hand.raised"
         case .loginItems: return "power"
+        case .systemData: return "internaldrive"
         }
     }
 }

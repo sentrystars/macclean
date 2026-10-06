@@ -30,7 +30,7 @@ struct DuplicateFinderView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .alert("确认清理重复文件", isPresented: $showRemoveConfirm) {
             Button("取消", role: .cancel) {}
             Button("移入废纸篓", role: .destructive) {
@@ -58,7 +58,7 @@ struct DuplicateFinderView: View {
             } label: {
                 Label(viewModel.groups.isEmpty ? "开始查找" : "重新查找", systemImage: "doc.on.doc")
             }
-            .buttonStyle(.borderedProminent)
+            .glassProminentButton()
             .controlSize(.large)
             .disabled(viewModel.isScanning)
         }
@@ -73,12 +73,11 @@ struct DuplicateFinderView: View {
                 .font(.caption)
                 .foregroundColor(.textSecondary)
             Button("取消", role: .cancel) { viewModel.cancelScan() }
-                .buttonStyle(.bordered)
+                .glassButton()
         }
         .padding(40)
         .frame(maxWidth: .infinity)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 
     private var summaryBar: some View {
@@ -100,7 +99,7 @@ struct DuplicateFinderView: View {
             } label: {
                 Label("移入废纸篓", systemImage: "trash")
             }
-            .buttonStyle(.borderedProminent)
+            .glassProminentButton()
             .disabled(viewModel.selectedPaths.isEmpty)
         }
     }
@@ -158,8 +157,7 @@ struct DuplicateFinderView: View {
                     }
                 }
                 .padding()
-                .background(Color.appCard)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .glassPanel(cornerRadius: 12)
             }
         }
     }

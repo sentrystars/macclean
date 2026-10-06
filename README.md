@@ -8,7 +8,9 @@ macOS 系统清理工具：分析磁盘占用、按应用粒度清理缓存与�
 - **缓存清理（Cache Cleanup）** — 按应用粒度列出用户缓存、日志、容器缓存、应用缓存，可排序、逐项勾选、Finder 定位
 - **深度清理（Deep Cleanup）** — 系统缓存/日志、临时文件、Claude VM 镜像、Xcode 产物、容器缓存
 - **系统维护** — 刷新 DNS、清理 Time Machine 本地快照、删除失效模拟器、清空废纸篓、释放内存、重建 Spotlight 索引
-- **存储分析（Storage Analysis）** — 磁盘概况、大文件（按文件粒度）、最大目录、应用占用排行、本地快照管理
+- **存储分析（Storage Analysis）** — 磁盘概况、大文件（按文件粒度）、最大目录、应用占用排行、本地快照管理、多卷/外置盘
+- **系统数据分析（System Data）** — 拆解 macOS「存储空间」里说不清的 System Data：模拟器运行时、开发缓存、应用支持数据、系统数据库等，按「可清理 / 需确认 / 系统管理」分级，并给出一键定位
+- **开发者缓存** — npm / pnpm / uv / pip / Puppeteer / Gradle / Maven / Cargo / rustup / CoreSimulator Caches，接入安全策略后一键清理
 - **废纸篓管理** — 查看内容、清空
 - **应用卸载器** — 列出 /Applications 与 ~/Applications，按 bundle id 精确匹配残留文件，应用与残留**一律移入废纸篓**
 - **重复文件查找** — 按大小分桶 + 流式 SHA-256 判定，每组保留最早一份，其余移入废纸篓
@@ -97,6 +99,12 @@ MacClean/
 ├── tools/             # build-app.sh / run-tests.sh
 └── project.yml        # XcodeGen 工程描述
 ```
+
+## 视觉风格
+
+- macOS 26 (Tahoe) 及以上：使用系统 **Liquid Glass**——卡片/面板走 `glassEffect`，主/次按钮走 `.glassProminent` / `.glass`，窗口使用渐变底色提供折射层次
+- macOS 14 / 15：同一套代码通过 `@available` 自动回退到实心卡片 + 细描边样式
+- 玻璃只用在**容器**上，不给每一行加玻璃，避免大量离屏合成带来的渲染开销
 
 ## 技术栈
 

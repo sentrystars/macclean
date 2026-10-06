@@ -42,7 +42,7 @@ struct DashboardView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .task {
             // TCC 探测可能触发系统调用，放到后台线程，避免阻塞主线程
             hasFullDiskAccess = await Task.detached(priority: .utility) {
@@ -140,9 +140,7 @@ struct DashboardView: View {
                 }
             }
             .padding()
-            .background(Color.appCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .appShadow, radius: 4)
+            .glassPanel(cornerRadius: 12)
         }
     }
 
@@ -200,9 +198,7 @@ struct DashboardView: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.appCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .appShadow, radius: 4)
+            .glassPanel(cornerRadius: 12)
         }
         .buttonStyle(.plain)
     }
@@ -249,8 +245,7 @@ struct DashboardView: View {
                 }
             }
             .padding()
-            .background(Color.appCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .glassPanel(cornerRadius: 12)
         }
     }
 
@@ -276,9 +271,7 @@ struct DashboardView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(16)
-                        .background(Color.appCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .shadow(color: .appShadow, radius: 2)
+                        .glassPanel(cornerRadius: 10)
                     }
                     .buttonStyle(.plain)
                 }
@@ -324,11 +317,10 @@ struct DashboardView: View {
                 cleanupVM.cancelScan()
                 withAnimation { showSmartScan = false }
             }
-            .buttonStyle(.bordered)
+            .glassButton()
         }
         .padding(40)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 
     private var scanResultsView: some View {
@@ -362,7 +354,7 @@ struct DashboardView: View {
                     appVM.selectedSidebarItem = .cacheCleanup
                     withAnimation { showSmartScan = false }
                 }
-                .buttonStyle(.bordered)
+                .glassButton()
 
                 Button {
                     if confirmBeforeClean { showCleanConfirm = true } else { Task { await cleanupVM.startCleanup() } }
@@ -370,7 +362,7 @@ struct DashboardView: View {
                     Label("清理选中项", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .controlSize(.large)
                 .disabled(cleanupVM.selectedItems.isEmpty)
 
@@ -378,11 +370,10 @@ struct DashboardView: View {
                     withAnimation { showSmartScan = false }
                     cleanupVM.reset()
                 }
-                .buttonStyle(.bordered)
+                .glassButton()
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 }

@@ -34,7 +34,7 @@ struct UninstallerView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .sheet(item: $pendingApp) { app in
             AssociatedFilesSheet(app: app, viewModel: viewModel)
         }
@@ -68,7 +68,7 @@ struct UninstallerView: View {
                 } label: {
                     Label(viewModel.apps.isEmpty ? "扫描应用" : "重新扫描", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .controlSize(.large)
             }
         }
@@ -80,12 +80,11 @@ struct UninstallerView: View {
             Text("正在统计已安装应用…")
                 .foregroundColor(.textSecondary)
             Button("取消", role: .cancel) { viewModel.cancelScan() }
-                .buttonStyle(.bordered)
+                .glassButton()
         }
         .padding(40)
         .frame(maxWidth: .infinity)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 
     private var emptySection: some View {
@@ -101,8 +100,7 @@ struct UninstallerView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 
     private var listSection: some View {
@@ -126,8 +124,7 @@ struct UninstallerView: View {
                 }
             }
             .padding(.vertical, 4)
-            .background(Color.appCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .glassPanel(cornerRadius: 12)
         }
     }
 
@@ -291,7 +288,7 @@ private struct AssociatedFilesSheet: View {
                         dismiss()
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .tint(.red)
                 .disabled(working)
             }

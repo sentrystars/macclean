@@ -308,4 +308,30 @@ enum CleanupPolicy {
         }
         return .allow(privileged: false)
     }
+// MARK: - 开发者缓存裁决
+
+    /// 开发者缓存：只允许清理 DeveloperCacheCatalog 中显式枚举的路径。
+    static func evaluateDeveloperCache(_ url: URL) -> PolicyDecision {
+        let path = url.standardizedFileURL.path
+        guard path != "/", path != homePath else {
+            return .deny("不允许操作磁盘根目录或用户主目录")
+        }
+        if isSymbolicLink(url) {
+            return .deny("符号链接不参与清理")
+        }
+        guard DeveloperCacheCatalog.isDeveloperCachePath(path) else {
+            return .deny("不在开发者缓存清单内")
+        }
+        return .allow(privileged: requiresPrivilege(for: path))
+    }
+
+    /// 按条目的分类选择合适的裁决策略（清理与特权删除共用）。
+    static func evaluateForCleanup(_ url: URL, category: CleanupCategory) -> PolicyDecision {
+        switch category {
+        case .developerCaches:
+            return evaluateDeveloperCache(url)
+        default:
+            return evaluate(url)
+        }
+    }
 }

@@ -47,7 +47,7 @@ struct DeepCleanView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .task {
             hasFullDiskAccess = await Task.detached(priority: .utility) {
                 MaintenanceService().hasFullDiskAccess()
@@ -94,13 +94,11 @@ struct DeepCleanView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             }
-            .buttonStyle(.borderedProminent)
+            .glassProminentButton()
             .controlSize(.large)
         }
         .padding(40)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .appShadow, radius: 4)
+        .glassPanel(cornerRadius: 16)
     }
 
     private var scanningSection: some View {
@@ -109,11 +107,10 @@ struct DeepCleanView: View {
             Text("正在扫描深度清理项目…")
                 .foregroundColor(.textSecondary)
             Button("取消", role: .cancel) { viewModel.cancel() }
-                .buttonStyle(.bordered)
+                .glassButton()
         }
         .padding(40)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 
     private var itemsList: some View {
@@ -140,7 +137,7 @@ struct DeepCleanView: View {
                 } label: {
                     Label("清理选中项", systemImage: "trash")
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .tint(.orange)
                 .disabled(viewModel.isCleaning || viewModel.selectedCount == 0)
             }
@@ -149,7 +146,7 @@ struct DeepCleanView: View {
                 ProgressView().scaleEffect(0.8)
             }
 
-            ForEach(["System Data", "macOS", "Application Caches"], id: \.self) { groupName in
+            ForEach(["System Data", "macOS", "Application Caches", "Developer"], id: \.self) { groupName in
                 let groupItems = viewModel.deepItems.filter { $0.category.group == groupName }
                 if !groupItems.isEmpty {
                     let grouped = Dictionary(grouping: groupItems) { $0.category }
@@ -179,8 +176,7 @@ struct DeepCleanView: View {
                                 }
                             }
                             .padding()
-                            .background(Color.appCard)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .glassPanel(cornerRadius: 12)
                         }
                     }
                 }
@@ -242,12 +238,11 @@ struct DeepCleanView: View {
                     Text("执行")
                 }
             }
-            .buttonStyle(.bordered)
+            .glassButton()
             .disabled(viewModel.runningMaintenance != nil)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 }

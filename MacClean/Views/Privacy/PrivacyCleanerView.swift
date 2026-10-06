@@ -27,8 +27,7 @@ struct PrivacyCleanerView: View {
                             }
                         }
                         .padding(.vertical, 4)
-                        .background(Color.appCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .glassPanel(cornerRadius: 12)
                     }
                 }
 
@@ -44,7 +43,7 @@ struct PrivacyCleanerView: View {
                     } label: {
                         Label("清理所选", systemImage: "hand.raised")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .glassProminentButton()
                     .disabled(viewModel.selected.isEmpty || viewModel.isCleaning)
                 }
 
@@ -58,7 +57,7 @@ struct PrivacyCleanerView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .task { await viewModel.scanSizes() }
         .alert("确认隐私清理", isPresented: $showConfirm) {
             Button("取消", role: .cancel) {}

@@ -48,7 +48,7 @@ final class CleanupViewModel {
     var selectedCount: Int { selectedItems.count }
 
     func groupedItems() -> [(group: String, categories: [(category: CleanupCategory, items: [ScanItem])])] {
-        let groups = ["Application Caches", "System Data", "macOS"]
+        let groups = ["Application Caches", "Developer", "System Data", "macOS"]
         return groups.compactMap { groupName in
             let groupItems = sortedScanItems.filter { $0.category.group == groupName }
             guard !groupItems.isEmpty else { return nil }

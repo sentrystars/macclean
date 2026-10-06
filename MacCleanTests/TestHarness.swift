@@ -84,6 +84,11 @@ struct MacCleanTestRunner {
             ("隐私：仅允许清单内路径", PrivacyPolicyTests.whitelist),
             ("重复文件：流式哈希判定", DuplicateTests.hashing),
             ("重复文件：分组统计与保留策略", DuplicateTests.groupMath),
+            ("开发者缓存：清单与路径判定", DeveloperCacheTests.catalog),
+            ("开发者缓存：清理策略", DeveloperCacheTests.policy),
+            ("开发者缓存：分类感知路由", DeveloperCacheTests.routing),
+            ("系统数据：构成项定义", SystemDataTests.specs),
+            ("系统数据：缺失路径计为 0", SystemDataTests.sizeOfMissingPath),
         ]
 
         var passed = 0

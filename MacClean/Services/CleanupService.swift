@@ -79,7 +79,7 @@ final class CleanupService: Sendable {
                 continue
             }
 
-            let decision = CleanupPolicy.evaluate(item.url)
+            let decision = CleanupPolicy.evaluateForCleanup(item.url, category: item.category)
             guard decision.isAllowed else {
                 let reason = decision.reason ?? "安全策略拒绝"
                 AppLog.denied(item.url.path, reason: reason)

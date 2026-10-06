@@ -111,3 +111,73 @@ enum DuplicateTests {
         try expectEqual(group.keepCandidate?.url.path, "/tmp/x1", "应保留最早修改的一份")
     }
 }
+
+enum DeveloperCacheTests {
+
+    static func catalog() throws {
+        let entries = DeveloperCacheCatalog.entries
+        try expect(entries.count >= 10, "开发者缓存条目过少")
+        // 不允许通配符
+        for entry in entries {
+            for path in entry.relativePaths + entry.absolutePaths {
+                try expect(!path.contains("*"), "清单中不应出现通配符：\(path)")
+            }
+        }
+        let allowed = DeveloperCacheCatalog.allowedPaths
+        try expect(allowed.contains(CleanupPolicy.home(".npm/_cacache")))
+        try expect(allowed.contains("/Library/Developer/CoreSimulator/Caches"))
+        try expect(DeveloperCacheCatalog.isDeveloperCachePath(CleanupPolicy.home(".npm/_cacache/hash/content")))
+        try expect(!DeveloperCacheCatalog.isDeveloperCachePath(CleanupPolicy.home(".npm")))
+        try expect(!DeveloperCacheCatalog.isDeveloperCachePath(CleanupPolicy.home("Documents/a.txt")))
+    }
+
+    static func policy() throws {
+        // 允许：清单内的缓存目录及其子项
+        try expect(CleanupPolicy.evaluateDeveloperCache(URL(fileURLWithPath: CleanupPolicy.home(".npm/_cacache"))).isAllowed)
+        try expect(CleanupPolicy.evaluateDeveloperCache(URL(fileURLWithPath: CleanupPolicy.home(".npm/_cacache/tmp/x"))).isAllowed)
+        try expect(CleanupPolicy.evaluateDeveloperCache(URL(fileURLWithPath: "/Library/Developer/CoreSimulator/Caches")).isAllowed)
+        // 拒绝：清单外
+        try expect(!CleanupPolicy.evaluateDeveloperCache(URL(fileURLWithPath: CleanupPolicy.home(".npm"))).isAllowed)
+        try expect(!CleanupPolicy.evaluateDeveloperCache(URL(fileURLWithPath: CleanupPolicy.home(".ssh"))).isAllowed)
+        try expect(!CleanupPolicy.evaluateDeveloperCache(URL(fileURLWithPath: CleanupPolicy.home("Library"))).isAllowed)
+        try expect(!CleanupPolicy.evaluateDeveloperCache(URL(fileURLWithPath: "/")).isAllowed)
+    }
+
+    static func routing() throws {
+        // 分类感知策略：开发者缓存走专用裁决
+        let path = URL(fileURLWithPath: CleanupPolicy.home(".npm/_cacache"))
+        try expect(CleanupPolicy.evaluateForCleanup(path, category: .developerCaches).isAllowed)
+        try expect(!CleanupPolicy.evaluateForCleanup(path, category: .userCaches).isAllowed)
+    }
+}
+
+enum SystemDataTests {
+
+    static func specs() throws {
+        let specs = SystemDataAnalyzer.specs
+        try expect(specs.count >= 15, "系统数据构成项过少")
+
+        var seen = Set<String>()
+        for spec in specs {
+            try expect(seen.insert(spec.id).inserted, "构成项 id 重复：\(spec.id)")
+            try expect(!spec.paths.isEmpty, "\(spec.id) 缺少路径")
+            for path in spec.paths {
+                try expect(path.hasPrefix("/"), "路径必须为绝对路径：\(path)")
+            }
+        }
+
+        let safeties = Set(specs.map(\.safety))
+        try expect(safeties.contains(.cleanable))
+        try expect(safeties.contains(.review))
+        try expect(safeties.contains(.systemManaged))
+
+        // 关键构成项必须覆盖
+        try expect(specs.contains { $0.paths.contains("/Library/Developer/CoreSimulator/Volumes") })
+        try expect(specs.contains { $0.paths.contains(CleanupPolicy.home(".npm")) })
+        try expect(specs.contains { $0.paths.contains("/private/var/db") })
+    }
+
+    static func sizeOfMissingPath() throws {
+        try expectEqual(SystemDataAnalyzer.size(ofPath: "/definitely/not/here"), 0)
+    }
+}

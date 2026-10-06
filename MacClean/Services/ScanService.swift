@@ -71,9 +71,10 @@ final class ScanService: Sendable {
         isRemovable: Bool = true,
         notRemovableReason: String? = nil,
         lastModified: Date? = nil,
-        requirePositiveSize: Bool = true
+        requirePositiveSize: Bool = true,
+        policy: (URL) -> PolicyDecision = CleanupPolicy.evaluate
     ) -> ScanItem? {
-        let decision = CleanupPolicy.evaluate(url)
+        let decision = policy(url)
         guard decision.isAllowed else {
             AppLog.denied(url.path, reason: decision.reason ?? "policy")
             return nil
@@ -329,6 +330,29 @@ final class ScanService: Sendable {
             guard fileManager.fileExists(atPath: trash.path) else { return }
             let items = childItems(of: trash, category: .trash, requirePositiveSize: false)
             emit(items, to: continuation)
+        }
+    }
+
+    // MARK: - 开发者缓存
+
+    /// 扫描开发者缓存（npm / pnpm / uv / Gradle / Cargo / CoreSimulator Caches ...）。
+    func scanDeveloperCaches() -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            for entry in DeveloperCacheCatalog.entries {
+                if isCancelled { return }
+                for url in entry.urls {
+                    guard fileManager.fileExists(atPath: url.path) else { continue }
+                    guard let scanItem = item(
+                        for: url,
+                        category: .developerCaches,
+                        subcategory: entry.tool,
+                        riskLevel: entry.riskLevel,
+                        requirePositiveSize: false,
+                        policy: CleanupPolicy.evaluateDeveloperCache
+                    ) else { continue }
+                    if !emit([scanItem], to: continuation) { return }
+                }
+            }
         }
     }
 

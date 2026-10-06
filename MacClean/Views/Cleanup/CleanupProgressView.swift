@@ -45,12 +45,10 @@ struct CleanupProgressView: View {
 
             if let onCancel {
                 Button("取消", role: .cancel, action: onCancel)
-                    .buttonStyle(.bordered)
+                    .glassButton()
             }
         }
         .padding(40)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .appShadow, radius: 4)
+        .glassPanel(cornerRadius: 16)
     }
 }

@@ -43,8 +43,7 @@ struct CleanupResultsView: View {
                     }
                 }
                 .padding()
-                .background(Color.appCard)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .glassPanel(cornerRadius: 12)
             }
 
             FailureListView(failures: summary.failures, title: "未删除的项目")
@@ -53,11 +52,11 @@ struct CleanupResultsView: View {
                 Label("返回", systemImage: "arrow.left")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .glassButton()
             .controlSize(.large)
         }
         .padding(24)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }

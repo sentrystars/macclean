@@ -30,10 +30,13 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
     case containerCaches
     case systemData
     case macOSSystem
+    case developerCaches
 
     /// 归入三大存储桶
     var group: String {
         switch self {
+        case .developerCaches:
+            return "Developer"
         case .userCaches, .systemCaches, .appCaches, .containerCaches:
             return "Application Caches"
         case .systemData, .userLogs, .systemLogs, .systemTemp, .dnsCache, .xcodeData, .iosSimulators, .claudeVM, .trash:
@@ -59,6 +62,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .containerCaches: return String(localized: "Container Caches")
         case .systemData: return String(localized: "System Data")
         case .macOSSystem: return String(localized: "macOS System")
+        case .developerCaches: return String(localized: "Developer Caches")
         }
     }
 
@@ -78,6 +82,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .containerCaches: return "square.grid.3x3"
         case .systemData: return "externaldrive.fill"
         case .macOSSystem: return "menubar.dock.rectangle"
+        case .developerCaches: return "terminal"
         }
     }
 
@@ -97,6 +102,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .containerCaches: return .teal
         case .systemData: return .brown
         case .macOSSystem: return .secondary
+        case .developerCaches: return .mint
         }
     }
 
@@ -116,7 +122,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .dnsCache, .systemTemp, .systemData, .macOSSystem,
              .systemCaches, .systemLogs, .containerCaches:
             return .caution
-        case .userCaches, .userLogs, .appCaches, .trash:
+        case .userCaches, .userLogs, .appCaches, .trash, .developerCaches:
             return .safe
         }
     }
@@ -140,6 +146,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         case .containerCaches: return String(localized: "沙盒容器缓存")
         case .systemData: return String(localized: "系统缓存、临时文件、iOS 备份")
         case .macOSSystem: return String(localized: "macOS 字体缓存与诊断报告")
+        case .developerCaches: return String(localized: "开发者缓存")
         }
     }
 }

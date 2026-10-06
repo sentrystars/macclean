@@ -42,8 +42,7 @@ struct CategoryCardView: View {
                 .font(.caption)
         }
         .padding(12)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassPanel(cornerRadius: 10)
         .shadow(color: .appShadow, radius: isHovering ? 4 : 2)
         .scaleEffect(isHovering ? 1.02 : 1)
         .contentShape(Rectangle())

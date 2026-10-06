@@ -158,7 +158,6 @@ struct MaintenanceResultRow: View {
             }
         }
         .padding(10)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .glassPanel(cornerRadius: 8)
     }
 }

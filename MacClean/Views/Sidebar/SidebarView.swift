@@ -23,7 +23,7 @@ struct SidebarView: View {
             }
 
             Section("Tools") {
-                ForEach([SidebarItem.uninstaller, .duplicates, .privacy, .storageAnalysis, .loginItems]) { sidebarItem($0) }
+                ForEach([SidebarItem.uninstaller, .duplicates, .privacy, .systemData, .storageAnalysis, .loginItems]) { sidebarItem($0) }
             }
 
             if let info = store.storageInfo {

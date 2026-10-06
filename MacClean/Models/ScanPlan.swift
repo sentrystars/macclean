@@ -15,6 +15,7 @@ extension ScanPlan {
         ScanPlan(name: "用户日志") { $0.scanUserLogs() },
         ScanPlan(name: "应用容器缓存") { $0.scanContainerCaches() },
         ScanPlan(name: "应用缓存") { $0.scanAppCaches() },
+        ScanPlan(name: "开发者缓存") { $0.scanDeveloperCaches() },
         ScanPlan(name: "系统数据") { service in service.scanSystemData(options: .current) },
         ScanPlan(name: "macOS 系统") { $0.scanMacOSSystem() },
         ScanPlan(name: "Claude VM") { $0.scanClaudeVM() },

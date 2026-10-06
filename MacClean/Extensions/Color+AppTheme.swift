@@ -32,6 +32,30 @@ extension Color {
         dark: Color(red: 0.15, green: 0.15, blue: 0.16)
     )
 
+    /// 窗口渐变底色：Liquid Glass 需要背景才有折射层次。
+    static let appBackgroundGradient = LinearGradient(
+        colors: [
+            Color(light: Color(red: 0.949, green: 0.957, blue: 0.980),
+                  dark: Color(red: 0.067, green: 0.071, blue: 0.094)),
+            Color(light: Color(red: 0.886, green: 0.906, blue: 0.949),
+                  dark: Color(red: 0.114, green: 0.118, blue: 0.153)),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    /// 侧栏底色（玻璃下方的冷色层）。
+    static let appSidebarGradient = LinearGradient(
+        colors: [
+            Color(light: Color(red: 0.925, green: 0.937, blue: 0.965),
+                  dark: Color(red: 0.086, green: 0.090, blue: 0.114)),
+            Color(light: Color(red: 0.878, green: 0.894, blue: 0.933),
+                  dark: Color(red: 0.106, green: 0.110, blue: 0.141)),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
     // MARK: - Risk Levels
     static let riskSafe = Color(red: 0.204, green: 0.78, blue: 0.349)
     static let riskCaution = Color(red: 1.0, green: 0.584, blue: 0.0)

@@ -30,8 +30,7 @@ struct LoginItemsView: View {
                             }
                         }
                         .padding(.vertical, 4)
-                        .background(Color.appCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .glassPanel(cornerRadius: 12)
                     }
                 }
 
@@ -45,7 +44,7 @@ struct LoginItemsView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .task { await viewModel.scan() }
     }
 
@@ -63,7 +62,7 @@ struct LoginItemsView: View {
             } label: {
                 Label("刷新", systemImage: "arrow.clockwise")
             }
-            .buttonStyle(.bordered)
+            .glassButton()
         }
     }
 

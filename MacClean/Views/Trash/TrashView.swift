@@ -17,7 +17,7 @@ struct TrashView: View {
                             Label("清空废纸篓", systemImage: "trash")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .glassProminentButton()
                         .tint(.red)
                         .controlSize(.large)
                         .disabled(viewModel.isEmptying)
@@ -28,7 +28,7 @@ struct TrashView: View {
                             Label("刷新", systemImage: "arrow.clockwise")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.bordered)
+                        .glassButton()
                         .controlSize(.large)
                     }
 
@@ -59,7 +59,7 @@ struct TrashView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .task { await viewModel.refresh() }
         .alert("清空废纸篓", isPresented: $showEmptyConfirm) {
             Button("取消", role: .cancel) {}
@@ -135,7 +135,6 @@ struct TrashView: View {
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 }

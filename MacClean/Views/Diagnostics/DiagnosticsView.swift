@@ -51,7 +51,7 @@ struct DiagnosticsView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .task { await viewModel.runFullDiagnostics() }
     }
 
@@ -70,7 +70,7 @@ struct DiagnosticsView: View {
                 } label: {
                     Label("重新分析", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.bordered)
+                .glassButton()
             }
         }
     }
@@ -83,8 +83,7 @@ struct DiagnosticsView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 
     private func storageInfoSection(_ info: StorageInfo) -> some View {
@@ -111,8 +110,7 @@ struct DiagnosticsView: View {
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 
     private var largeFilesSection: some View {
@@ -156,8 +154,7 @@ struct DiagnosticsView: View {
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 
     private var volumesSection: some View {
@@ -210,8 +207,7 @@ struct DiagnosticsView: View {
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 
     private var largeDirectoriesSection: some View {
@@ -245,8 +241,7 @@ struct DiagnosticsView: View {
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 
     private var appBreakdownSection: some View {
@@ -266,8 +261,7 @@ struct DiagnosticsView: View {
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 
     private var timeMachineSection: some View {
@@ -285,7 +279,7 @@ struct DiagnosticsView: View {
                         Label("清理快照", systemImage: "trash")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .disabled(viewModel.isDeletingSnapshots)
             }
 
@@ -305,8 +299,7 @@ struct DiagnosticsView: View {
             }
         }
         .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .glassPanel(cornerRadius: 12)
     }
 }
 

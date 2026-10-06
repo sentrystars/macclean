@@ -54,3 +54,8 @@
 "Privacy" = "隐私清理";
 "Login Items" = "启动项";
 "Cleanup" = "清理";
+
+/* 系统数据 / 开发者缓存 */
+"System Data" = "系统数据";
+"Developer" = "开发者";
+"Developer Caches" = "开发者缓存";

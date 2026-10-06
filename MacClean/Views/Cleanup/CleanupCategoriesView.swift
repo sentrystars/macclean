@@ -14,7 +14,7 @@ struct CleanupCategoriesView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .appWindowBackground()
         .alert("确认清理", isPresented: $showCleanConfirm) {
             Button("取消", role: .cancel) {}
             Button("清理", role: .destructive) {
@@ -40,7 +40,7 @@ struct CleanupCategoriesView: View {
                 } label: {
                     Label("开始扫描", systemImage: "magnifyingglass")
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .controlSize(.large)
             }
         }
@@ -70,7 +70,7 @@ struct CleanupCategoriesView: View {
                 style: .info,
                 message: "清理前会逐项校验安全策略：浏览器配置、钥匙串、应用包等用户数据不会被删除；需要管理员权限的项目会集中弹一次授权。"
             )
-            ForEach(["Application Caches", "System Data", "macOS"], id: \.self) { groupName in
+            ForEach(["Application Caches", "Developer", "System Data", "macOS"], id: \.self) { groupName in
                 let categories = CleanupCategory.allCases.filter { $0.group == groupName }
                 if !categories.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -114,11 +114,10 @@ struct CleanupCategoriesView: View {
                     .foregroundColor(.textSecondary)
             }
             Button("取消", role: .cancel) { viewModel.cancelScan() }
-                .buttonStyle(.bordered)
+                .glassButton()
         }
         .padding(40)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 
     private var resultsView: some View {
@@ -153,7 +152,7 @@ struct CleanupCategoriesView: View {
                 } label: {
                     Label("清理选中项", systemImage: "trash")
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .disabled(viewModel.selectedItems.isEmpty)
             }
 
@@ -189,8 +188,7 @@ struct CleanupCategoriesView: View {
                             }
                         }
                         .padding()
-                        .background(Color.appCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .glassPanel(cornerRadius: 12)
                     }
                 }
             }
@@ -206,10 +204,9 @@ struct CleanupCategoriesView: View {
                 .foregroundColor(.textSecondary)
                 .multilineTextAlignment(.center)
             Button("重试") { viewModel.reset() }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
         }
         .padding(40)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassPanel(cornerRadius: 16)
     }
 }

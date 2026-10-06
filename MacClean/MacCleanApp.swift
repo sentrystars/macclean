@@ -2,41 +2,76 @@ import SwiftUI
 
 @main
 struct MacCleanApp: App {
+
     @State private var viewModel = AppViewModel()
+    @AppStorage(SettingsKey.showMenuBarIcon) private var showMenuBarIcon = true
+
+    init() {
+        SettingsKey.registerDefaults()
+        AutoCleanScheduler.shared.start()
+    }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environment(viewModel)
         }
         .windowStyle(.titleBar)
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1120, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appInfo) {
+                Button("刷新磁盘信息") {
+                    Task { await StorageStore.shared.refresh(force: true) }
+                }
+                .keyboardShortcut("r", modifiers: [.command])
+            }
+        }
+
+        MenuBarExtra(isInserted: $showMenuBarIcon) {
+            MenuBarView()
+                .environment(viewModel)
+        } label: {
+            Label("MacClean", systemImage: "leaf.fill")
+        }
+        .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
         }
     }
 }
 
 @Observable
 final class AppViewModel {
-    var selectedCategory: CleanupCategory?
     var selectedSidebarItem: SidebarItem = .dashboard
 }
 
-enum SidebarItem: String, CaseIterable, Hashable {
+enum SidebarItem: String, CaseIterable, Hashable, Identifiable {
     case dashboard
     case cacheCleanup
     case deepCleanup
-    case storageAnalysis
     case trash
+    case uninstaller
+    case duplicates
+    case privacy
+    case storageAnalysis
+    case loginItems
+
+    var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .dashboard: return "Dashboard"
-        case .cacheCleanup: return "Cache Cleanup"
-        case .deepCleanup: return "Deep Cleanup"
-        case .storageAnalysis: return "Storage Analysis"
-        case .trash: return "Trash Manager"
+        case .dashboard: return String(localized: "Dashboard")
+        case .cacheCleanup: return String(localized: "Cache Cleanup")
+        case .deepCleanup: return String(localized: "Deep Cleanup")
+        case .storageAnalysis: return String(localized: "Storage Analysis")
+        case .trash: return String(localized: "Trash Manager")
+        case .uninstaller: return String(localized: "Uninstaller")
+        case .duplicates: return String(localized: "Duplicate Finder")
+        case .privacy: return String(localized: "Privacy")
+        case .loginItems: return String(localized: "Login Items")
         }
     }
 
@@ -47,6 +82,10 @@ enum SidebarItem: String, CaseIterable, Hashable {
         case .deepCleanup: return "trash.circle"
         case .storageAnalysis: return "chart.pie"
         case .trash: return "trash"
+        case .uninstaller: return "shippingbox"
+        case .duplicates: return "doc.on.doc"
+        case .privacy: return "hand.raised"
+        case .loginItems: return "power"
         }
     }
 }

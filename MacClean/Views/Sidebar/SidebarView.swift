@@ -2,12 +2,10 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(AppViewModel.self) private var appVM
-    @State private var storageInfo: StorageInfo?
-    @State private var isLoadingStorage = true
+    private var store = StorageStore.shared
 
     var body: some View {
         List(selection: Bindable(appVM).selectedSidebarItem) {
-            // App branding
             Section {
                 Label("MacClean", systemImage: "leaf.fill")
                     .font(.title3.bold())
@@ -16,21 +14,19 @@ struct SidebarView: View {
                     .padding(.vertical, 4)
             }
 
-            // Quick Access
             Section("Quick Access") {
-                sidebarItem(.dashboard)
+                ForEach([SidebarItem.dashboard]) { sidebarItem($0) }
             }
 
-            // Tools
+            Section("Cleanup") {
+                ForEach([SidebarItem.cacheCleanup, .deepCleanup, .trash]) { sidebarItem($0) }
+            }
+
             Section("Tools") {
-                sidebarItem(.cacheCleanup)
-                sidebarItem(.deepCleanup)
-                sidebarItem(.storageAnalysis)
-                sidebarItem(.trash)
+                ForEach([SidebarItem.uninstaller, .duplicates, .privacy, .storageAnalysis, .loginItems]) { sidebarItem($0) }
             }
 
-            // Storage Pressure
-            if let info = storageInfo {
+            if let info = store.storageInfo {
                 Section("Storage") {
                     storagePressureView(info)
                 }
@@ -38,11 +34,7 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .navigationTitle("")
-        .task {
-            let diagnostic = DiagnosticService()
-            storageInfo = try? await diagnostic.getStorageInfo()
-            isLoadingStorage = false
-        }
+        .task { await store.refresh() }
     }
 
     private func sidebarItem(_ item: SidebarItem) -> some View {
@@ -59,9 +51,7 @@ struct SidebarView: View {
                     .font(.caption)
                     .foregroundColor(.textSecondary)
                 Spacer()
-                let used = FileSizeFormatter.string(from: info.usedBytes)
-                let total = FileSizeFormatter.string(from: info.totalBytes)
-                Text("\(used) / \(total)")
+                Text("\(FileSizeFormatter.string(from: info.usedBytes)) / \(FileSizeFormatter.string(from: info.totalBytes))")
                     .font(.caption.monospacedDigit())
                     .foregroundColor(.textSecondary)
             }
@@ -71,7 +61,6 @@ struct SidebarView: View {
                     Capsule()
                         .fill(Color.progressTrack)
                         .frame(height: 6)
-
                     Capsule()
                         .fill(pressureColor(percentage: info.usagePercentage))
                         .frame(width: geo.size.width * CGFloat(min(info.usagePercentage, 1.0)))

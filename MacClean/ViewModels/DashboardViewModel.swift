@@ -1,25 +1,16 @@
 import Foundation
+import Observation
 
 @MainActor
 @Observable
 final class DashboardViewModel {
-    var storageInfo: StorageInfo?
-    var isScanning = false
-    var error: String?
-    var lastRefreshed: Date?
 
-    private let diagnosticService = DiagnosticService()
+    var storageInfo: StorageInfo? { StorageStore.shared.storageInfo }
+    var isScanning: Bool { StorageStore.shared.isRefreshing }
+    var error: String? { StorageStore.shared.error }
+    var lastRefreshed: Date? { StorageStore.shared.lastRefreshed }
 
-    func refreshStorageInfo() async {
-        isScanning = true
-        error = nil
-        lastRefreshed = nil
-        do {
-            storageInfo = try await diagnosticService.getStorageInfo()
-            lastRefreshed = Date()
-        } catch {
-            self.error = error.localizedDescription
-        }
-        isScanning = false
+    func refreshStorageInfo(force: Bool = false) async {
+        await StorageStore.shared.refresh(force: force)
     }
 }

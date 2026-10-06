@@ -44,8 +44,6 @@ extension Color {
         light: Color(red: 0.898, green: 0.898, blue: 0.902),
         dark: Color(red: 0.3, green: 0.3, blue: 0.31)
     )
-    static let storageApps = Color(red: 0.204, green: 0.78, blue: 0.349)
-    static let storageDocuments = Color(red: 0.345, green: 0.337, blue: 0.839)
 
     // MARK: - Progress
     static let progressTrack = Color(

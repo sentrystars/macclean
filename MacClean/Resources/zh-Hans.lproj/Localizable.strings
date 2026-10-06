@@ -1,0 +1,56 @@
+/* MacClean 简体中文本地化
+   源字符串为英文的界面文案在此翻译；已是中文的源字符串无需条目。 */
+
+/* 侧栏与工具名 */
+"Dashboard" = "概览";
+"Cache Cleanup" = "缓存清理";
+"Deep Cleanup" = "深度清理";
+"Storage Analysis" = "存储分析";
+"Trash Manager" = "废纸篓";
+"Quick Access" = "快速访问";
+"Tools" = "工具";
+"Storage" = "存储";
+
+/* 分类名 */
+"User Caches" = "用户缓存";
+"System Caches" = "系统缓存";
+"User Logs" = "用户日志";
+"System Logs" = "系统日志";
+"App Caches" = "应用缓存";
+"Claude VM Images" = "Claude VM 镜像";
+"Xcode Data" = "Xcode 数据";
+"iOS Simulators" = "iOS 模拟器";
+"DNS Cache" = "DNS 缓存";
+"Trash" = "废纸篓";
+"System Temp Files" = "系统临时文件";
+"Container Caches" = "容器缓存";
+"System Data" = "系统数据";
+"macOS System" = "macOS 系统";
+
+/* 概览页 */
+"Storage Overview" = "存储概览";
+"Quick Actions" = "快捷操作";
+"Recent Cleanup" = "最近清理";
+"Explore Tools" = "全部工具";
+"Smart Scan" = "智能扫描";
+"Deep Clean" = "深度清理";
+"Empty Trash" = "清空废纸篓";
+"Analyze" = "存储分析";
+"Total" = "总计";
+"Used" = "已用";
+"Free" = "可用";
+"Caches" = "缓存";
+"Other" = "其他";
+"Disk Usage" = "磁盘占用";
+
+/* 存储分析 */
+"Disk Overview" = "磁盘概况";
+"Largest Directories" = "最大的目录";
+"App Storage Breakdown" = "应用占用排行";
+
+/* 新增页面 */
+"Uninstaller" = "应用卸载";
+"Duplicate Finder" = "重复文件";
+"Privacy" = "隐私清理";
+"Login Items" = "启动项";
+"Cleanup" = "清理";

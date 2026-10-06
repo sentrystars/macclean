@@ -1,28 +1,33 @@
 import Foundation
 
+/// 应用缓存锚点：扫描时只在其下寻找缓存叶子，避免误删配置目录。
+struct AppCacheAnchor: Sendable, Equatable {
+    let name: String
+    let path: String
+}
+
 enum AppConstants {
     static let appName = "MacClean"
-    static let helperToolBundleID = "com.macclean.helper"
 
-    // MARK: - User-Level Paths
+    // MARK: - 用户级路径
     static let userCachePath = "Library/Caches"
     static let userLogsPath = "Library/Logs"
-    static let crashReporterPath = "Library/Application Support/CrashReporter"
     static let containersPath = "Library/Containers"
-    static let groupContainersPath = "Library/Group Containers"
     static let trashPath = ".Trash"
 
-    // MARK: - App Support Caches
-    static let claudeAppSupport = "Library/Application Support/Claude-3p"
     static let claudeVMBundle = "Library/Application Support/Claude-3p/vm_bundles/claudevm.bundle"
-    static let openaiAtlas = "Library/Application Support/com.openai.atlas"
-    static let openaiChat = "Library/Caches/com.openai.chat"
-    static let codex = "Library/Application Support/Codex"
-    static let windsurf = "Library/Application Support/Windsurf"
-    static let vscode = "Library/Application Support/Code"
-    static let bilibili = "Library/Application Support/bilibili"
-    static let brave = "Library/Application Support/BraveSoftware/Brave-Browser"
-    static let chrome = "Library/Application Support/Google/Chrome"
+
+    /// 只在锚点下清理缓存叶子目录（Cache/GPUCache/Code Cache/...）。
+    static let appCacheAnchors: [AppCacheAnchor] = [
+        AppCacheAnchor(name: "Claude", path: "Library/Application Support/Claude-3p"),
+        AppCacheAnchor(name: "OpenAI Atlas", path: "Library/Application Support/com.openai.atlas"),
+        AppCacheAnchor(name: "Codex", path: "Library/Application Support/Codex"),
+        AppCacheAnchor(name: "Windsurf", path: "Library/Application Support/Windsurf"),
+        AppCacheAnchor(name: "VS Code", path: "Library/Application Support/Code"),
+        AppCacheAnchor(name: "Bilibili", path: "Library/Application Support/bilibili"),
+        AppCacheAnchor(name: "Brave", path: "Library/Application Support/BraveSoftware/Brave-Browser"),
+        AppCacheAnchor(name: "Chrome", path: "Library/Application Support/Google/Chrome"),
+    ]
 
     // MARK: - Xcode
     static let xcodeDerivedData = "Library/Developer/Xcode/DerivedData"
@@ -30,16 +35,11 @@ enum AppConstants {
     static let xcodeArchives = "Library/Developer/Xcode/Archives"
     static let coreSimulator = "Library/Developer/CoreSimulator"
 
-    // MARK: - System Paths (require sudo)
-    static let systemCaches = "/Library/Caches"
-    static let systemLogs = "/Library/Logs"
-    static let privateTmp = "/private/tmp"
-    static let privateVarTmp = "/private/var/tmp"
-    static let privateVarFolders = "/private/var/folders"
-    static let systemLibraryCaches = "/System/Library/Caches"
-    static let vmPath = "/private/var/vm"
-    static let mobileBackups = "/.MobileBackups"
-
-    // MARK: - iOS Backups
+    // MARK: - 备份
     static let iOSBackupPath = "Library/Application Support/MobileSync/Backup"
+
+    /// 大文件搜索根目录（相对用户主目录）。
+    static let largeFileSearchPaths = [
+        "Downloads", "Documents", "Desktop", "Movies", "Music", "Pictures", "Public",
+    ]
 }

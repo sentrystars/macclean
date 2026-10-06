@@ -1,226 +1,191 @@
 import Foundation
+import Observation
 
-enum ViewPhase: Equatable {
+enum ViewPhase {
     case idle
     case scanning(progress: ScanProgress)
-    case results(items: [ScanItem])
+    case results
     case cleaning(progress: CleanProgress)
-    case complete(results: [CleanupResult])
+    case complete(summary: CleanupSummary)
     case error(message: String)
-
-    static func == (lhs: ViewPhase, rhs: ViewPhase) -> Bool {
-        switch (lhs, rhs) {
-        case (.idle, .idle): return true
-        case (.scanning, .scanning): return true
-        case (.results, .results): return true
-        case (.cleaning, .cleaning): return true
-        case (.complete, .complete): return true
-        case (.error, .error): return true
-        default: return false
-        }
-    }
 }
 
 @MainActor
 @Observable
 final class CleanupViewModel {
+
     var phase: ViewPhase = .idle
     var scanItems: [ScanItem] = []
     var selectedItems = Set<UUID>()
-    var results: [CleanupResult] = []
     var sortBy: SortOption = .sizeDesc
+    private(set) var categoriesCompleted = 0
+    private(set) var totalCategories = 0
+    private(set) var lastSummary: CleanupSummary?
 
-    enum SortOption: String, CaseIterable {
-        case sizeDesc = "Largest First"
-        case sizeAsc = "Smallest First"
-        case name = "By Name"
-        case category = "By Category"
-    }
-
-    var sortedScanItems: [ScanItem] {
-        switch sortBy {
-        case .sizeDesc: return scanItems.sorted { $0.sizeBytes > $1.sizeBytes }
-        case .sizeAsc: return scanItems.sorted { $0.sizeBytes < $1.sizeBytes }
-        case .name: return scanItems.sorted { ($0.subcategory ?? $0.url.lastPathComponent) < ($1.subcategory ?? $1.url.lastPathComponent) }
-        case .category: return scanItems.sorted { $0.category.displayName < $1.category.displayName }
-        }
+    enum SortOption: String, CaseIterable, Sendable {
+        case sizeDesc = "按大小降序"
+        case sizeAsc = "按大小升序"
+        case name = "按名称"
+        case category = "按分类"
     }
 
     private let scanService = ScanService()
     private let cleanupService = CleanupService()
 
-    // MARK: - Scan
-    func startScan() async {
-        phase = .scanning(progress: ScanProgress(
-            phase: "Starting scan...",
-            currentItem: "",
-            filesScanned: 0,
-            bytesFound: 0,
-            categoriesCompleted: 0,
-            totalCategories: 9
-        ))
+    // MARK: - 派生数据
 
-        scanItems = []
-        var totalBytes: Int64 = 0
-        var categoriesDone = 0
-
-        // Application Caches
-        await scanCategory({ await scanService.scanUserCaches().collect() }, name: "User Caches", totalBytes: &totalBytes, categoriesDone: &categoriesDone)
-        await scanCategory({ await scanService.scanUserLogs().collect() }, name: "User Logs", totalBytes: &totalBytes, categoriesDone: &categoriesDone)
-        await scanCategory({ await scanService.scanContainerCaches().collect() }, name: "Container Caches", totalBytes: &totalBytes, categoriesDone: &categoriesDone)
-
-        let appCaches = await scanService.scanAppCaches()
-        scanItems.append(contentsOf: appCaches)
-        totalBytes += appCaches.reduce(0) { $0 + $1.sizeBytes }
-        categoriesDone += 1
-
-        // System Data
-        let systemDataItems = await scanService.scanSystemData()
-        scanItems.append(contentsOf: systemDataItems)
-        totalBytes += systemDataItems.reduce(0) { $0 + $1.sizeBytes }
-        categoriesDone += 1
-
-        let vmItems = await scanService.scanClaudeVM()
-        scanItems.append(contentsOf: vmItems)
-        totalBytes += vmItems.reduce(0) { $0 + $1.sizeBytes }
-        categoriesDone += 1
-
-        let xcodeItems = await scanService.scanXcodeData()
-        scanItems.append(contentsOf: xcodeItems)
-        totalBytes += xcodeItems.reduce(0) { $0 + $1.sizeBytes }
-        categoriesDone += 1
-
-        // macOS
-        let macItems = await scanService.scanMacOSSystem()
-        scanItems.append(contentsOf: macItems)
-        totalBytes += macItems.reduce(0) { $0 + $1.sizeBytes }
-        categoriesDone += 1
-
-        if let trashItem = await scanService.scanTrash() {
-            scanItems.append(trashItem)
-            totalBytes += trashItem.sizeBytes
+    var sortedScanItems: [ScanItem] {
+        switch sortBy {
+        case .sizeDesc: return scanItems.sorted { $0.sizeBytes > $1.sizeBytes }
+        case .sizeAsc: return scanItems.sorted { $0.sizeBytes < $1.sizeBytes }
+        case .name: return scanItems.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+        case .category: return scanItems.sorted { $0.category.displayName < $1.category.displayName }
         }
-        categoriesDone += 1
-
-        selectedItems = Set(scanItems.filter { $0.category.riskLevel != .warning }.map(\.id))
-
-        phase = .results(items: scanItems)
     }
 
-    private func scanCategory(_ scan: () async -> [ScanItem], name: String, totalBytes: inout Int64, categoriesDone: inout Int) async {
-        let items = await scan()
-        scanItems.append(contentsOf: items)
-        totalBytes += items.reduce(0) { $0 + $1.sizeBytes }
-        categoriesDone += 1
+    var totalBytes: Int64 { scanItems.reduce(0) { $0 + $1.sizeBytes } }
+    var selectedBytes: Int64 { scanItems.filter { selectedItems.contains($0.id) }.reduce(0) { $0 + $1.sizeBytes } }
+    var selectedCount: Int { selectedItems.count }
+
+    func groupedItems() -> [(group: String, categories: [(category: CleanupCategory, items: [ScanItem])])] {
+        let groups = ["Application Caches", "System Data", "macOS"]
+        return groups.compactMap { groupName in
+            let groupItems = sortedScanItems.filter { $0.category.group == groupName }
+            guard !groupItems.isEmpty else { return nil }
+            let byCategory = Dictionary(grouping: groupItems) { $0.category }
+            let categories = byCategory
+                .map { (category: $0.key, items: $0.value) }
+                .sorted { $0.category.displayName < $1.category.displayName }
+            return (groupName, categories)
+        }
+    }
+
+    // MARK: - 扫描
+
+    func startScan(plans: [ScanPlan] = ScanPlan.standard) async {
+        reset()
+        scanService.resetCancellation()
+        totalCategories = plans.count
+        phase = .scanning(progress: ScanProgress(phase: "准备扫描…", totalCategories: plans.count))
+
+        let (stream, continuation) = AsyncStream<ScanItem>.makeStream(bufferingPolicy: .unbounded)
+
+        let consumer = Task { @MainActor [weak self] in
+            for await item in stream {
+                self?.append(item)
+            }
+        }
+
+        await withTaskGroup(of: Void.self) { group in
+            for plan in plans {
+                group.addTask { [scanService] in
+                    for await item in plan.makeStream(scanService) {
+                        continuation.yield(item)
+                    }
+                    await self.markCategoryCompleted(plan.name)
+                }
+            }
+        }
+
+        continuation.finish()
+        await consumer.value
+
+        // 取消后不能把 phase 覆盖回 results，否则界面会把半截结果当成完整结果。
+        guard !scanService.isCancelled, !Task.isCancelled else { return }
+        phase = .results
+        applyDefaultSelection()
+    }
+
+    private func markCategoryCompleted(_ name: String) {
+        guard !scanService.isCancelled else { return }
+        categoriesCompleted += 1
         phase = .scanning(progress: ScanProgress(
-            phase: "Scanning \(name)...",
+            phase: "已完成：\(name)",
             currentItem: name,
             filesScanned: scanItems.count,
             bytesFound: totalBytes,
-            categoriesCompleted: categoriesDone,
-            totalCategories: 9
+            categoriesCompleted: categoriesCompleted,
+            totalCategories: totalCategories
         ))
     }
 
-    // MARK: - Cleanup
-    func startCleanup() async {
-        let itemsToClean = scanItems.filter { selectedItems.contains($0.id) }
-        guard !itemsToClean.isEmpty else {
-            phase = .error(message: "No items selected for cleanup")
-            return
-        }
-
-        phase = .cleaning(progress: CleanProgress(
-            phase: "Starting cleanup...",
-            currentItem: "",
-            itemsCleaned: 0,
-            totalItems: itemsToClean.count,
-            bytesFreed: 0
+    private func append(_ item: ScanItem) {
+        scanItems.append(item)
+        phase = .scanning(progress: ScanProgress(
+            phase: "扫描中…",
+            currentItem: item.displayName,
+            filesScanned: scanItems.count,
+            bytesFound: totalBytes,
+            categoriesCompleted: categoriesCompleted,
+            totalCategories: totalCategories
         ))
+    }
 
-        results = []
-        var totalFreed: Int64 = 0
-        var cleaned = 0
-
-        let stream = await cleanupService.removeItems(itemsToClean)
-        for await progress in stream {
-            phase = .cleaning(progress: progress)
-            cleaned = progress.itemsCleaned
-            totalFreed = progress.bytesFreed
-        }
-
-        // Handle special cleanups
-        if itemsToClean.contains(where: { $0.category == .claudeVM }) {
-            if let result = try? await cleanupService.cleanClaudeVM() {
-                results.append(result)
-            }
-        }
-        if itemsToClean.contains(where: { $0.category == .iosSimulators }) {
-            if let result = try? await cleanupService.cleanIOSSimulators() {
-                results.append(result)
-            }
-        }
-        if itemsToClean.contains(where: { $0.category == .dnsCache }) {
-            if let result = try? await cleanupService.flushDNSCache() {
-                results.append(result)
-            }
-        }
-        if itemsToClean.contains(where: { $0.category == .trash }) {
-            let trashSvc = TrashService()
-            if let result = try? await trashSvc.emptyTrash() {
-                results.append(result)
-            }
-        }
-
-        let summaryResult = CleanupResult(
-            category: .userCaches,
-            bytesFreed: totalFreed,
-            itemsRemoved: cleaned
-        )
-        results.append(summaryResult)
-
-        phase = .complete(results: results)
-
-        // Record cleanup history
-        let totalCleaned = results.reduce(0) { $0 + $1.bytesFreed }
-        if totalCleaned > 0 {
-            CleanupHistory.shared.recordCleanup(freed: totalFreed)
+    private func applyDefaultSelection() {
+        let autoSelect = UserDefaults.standard.bool(forKey: SettingsKey.autoSelectSafeItems)
+        if autoSelect {
+            selectedItems = Set(scanItems.filter { $0.riskLevel == .safe && $0.isRemovable }.map(\.id))
+        } else {
+            selectedItems = []
         }
     }
 
     func cancelScan() {
-        Task { await scanService.cancel() }
+        scanService.cancel()
         phase = .idle
     }
 
+    // MARK: - 清理
+
+    func startCleanup() async {
+        let items = scanItems.filter { selectedItems.contains($0.id) }
+        guard !items.isEmpty else {
+            phase = .error(message: "没有选中任何项目")
+            return
+        }
+
+        cleanupService.reset()
+        phase = .cleaning(progress: CleanProgress(phase: "准备清理…", totalItems: items.count))
+
+        let options = CleanupOptions.current
+        for await event in cleanupService.clean(items: items, options: options) {
+            switch event {
+            case .progress(let progress):
+                phase = .cleaning(progress: progress)
+            case .finished(let summary):
+                lastSummary = summary
+                CleanupHistory.shared.record(summary: summary)
+                phase = .complete(summary: summary)
+                // 已删除的条目从列表移除
+                let removedIDs = Set(items.filter { !FileManager.default.fileExists(atPath: $0.url.path) }.map(\.id))
+                scanItems.removeAll { removedIDs.contains($0.id) }
+                selectedItems.subtract(removedIDs)
+            }
+        }
+    }
+
     func cancelCleanup() {
-        Task { await cleanupService.cancel() }
+        cleanupService.cancel()
         phase = .idle
+    }
+
+    // MARK: - 选择
+
+    func toggleItem(_ id: UUID) {
+        if selectedItems.contains(id) { selectedItems.remove(id) } else { selectedItems.insert(id) }
+    }
+
+    func selectAll() { selectedItems = Set(scanItems.filter(\.isRemovable).map(\.id)) }
+    func selectNone() { selectedItems = [] }
+    func selectSafeOnly() {
+        selectedItems = Set(scanItems.filter { $0.riskLevel == .safe && $0.isRemovable }.map(\.id))
     }
 
     func reset() {
         phase = .idle
         scanItems = []
         selectedItems = []
-        results = []
-    }
-
-    func toggleItem(_ id: UUID) {
-        if selectedItems.contains(id) {
-            selectedItems.remove(id)
-        } else {
-            selectedItems.insert(id)
-        }
-    }
-}
-
-// MARK: - AsyncStream collector
-extension AsyncStream where Element == ScanItem {
-    func collect() async -> [Element] {
-        var items: [Element] = []
-        for await item in self {
-            items.append(item)
-        }
-        return items
+        lastSummary = nil
+        categoriesCompleted = 0
     }
 }

@@ -1,9 +1,17 @@
 import SwiftUI
 
-enum RiskLevel: String, Codable, Sendable {
+enum RiskLevel: String, Codable, Sendable, CaseIterable {
     case safe
     case caution
     case warning
+
+    var displayName: String {
+        switch self {
+        case .safe: return String(localized: "安全")
+        case .caution: return String(localized: "谨慎")
+        case .warning: return String(localized: "高风险")
+        }
+    }
 }
 
 enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
@@ -23,7 +31,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
     case systemData
     case macOSSystem
 
-    /// Groups categories into the three Mac storage buckets
+    /// 归入三大存储桶
     var group: String {
         switch self {
         case .userCaches, .systemCaches, .appCaches, .containerCaches:
@@ -37,20 +45,20 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .userCaches: return "User Caches"
-        case .systemCaches: return "System Caches"
-        case .userLogs: return "User Logs"
-        case .systemLogs: return "System Logs"
-        case .appCaches: return "App Caches"
-        case .claudeVM: return "Claude VM Images"
-        case .xcodeData: return "Xcode Data"
-        case .iosSimulators: return "iOS Simulators"
-        case .dnsCache: return "DNS Cache"
-        case .trash: return "Trash"
-        case .systemTemp: return "System Temp Files"
-        case .containerCaches: return "Container Caches"
-        case .systemData: return "System Data"
-        case .macOSSystem: return "macOS System"
+        case .userCaches: return String(localized: "User Caches")
+        case .systemCaches: return String(localized: "System Caches")
+        case .userLogs: return String(localized: "User Logs")
+        case .systemLogs: return String(localized: "System Logs")
+        case .appCaches: return String(localized: "App Caches")
+        case .claudeVM: return String(localized: "Claude VM Images")
+        case .xcodeData: return String(localized: "Xcode Data")
+        case .iosSimulators: return String(localized: "iOS Simulators")
+        case .dnsCache: return String(localized: "DNS Cache")
+        case .trash: return String(localized: "Trash")
+        case .systemTemp: return String(localized: "System Temp Files")
+        case .containerCaches: return String(localized: "Container Caches")
+        case .systemData: return String(localized: "System Data")
+        case .macOSSystem: return String(localized: "macOS System")
         }
     }
 
@@ -94,7 +102,7 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
 
     var requiresSudo: Bool {
         switch self {
-        case .systemCaches, .systemLogs, .systemTemp, .dnsCache, .systemData:
+        case .systemCaches, .systemLogs, .systemTemp, .systemData:
             return true
         default:
             return false
@@ -105,41 +113,33 @@ enum CleanupCategory: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .claudeVM, .xcodeData, .iosSimulators:
             return .caution
-        case .dnsCache, .systemTemp, .systemData:
+        case .dnsCache, .systemTemp, .systemData, .macOSSystem,
+             .systemCaches, .systemLogs, .containerCaches:
             return .caution
-        case .trash:
-            return .safe
-        default:
+        case .userCaches, .userLogs, .appCaches, .trash:
             return .safe
         }
     }
+
+    /// 默认是否勾选（只有 safe 才默认选中）。
+    var isSelectedByDefault: Bool { riskLevel == .safe }
 
     var description: String {
         switch self {
-        case .userCaches: return "Application cache files that can be safely regenerated"
-        case .systemCaches: return "System-level cache files (requires admin access)"
-        case .userLogs: return "User application log files"
-        case .systemLogs: return "System log files (requires admin access)"
-        case .appCaches: return "Caches from Claude, ChatGPT, browsers, and IDEs"
-        case .claudeVM: return "Claude VM disk images (compressed backup preserved)"
-        case .xcodeData: return "DerivedData, device support, and archives"
-        case .iosSimulators: return "Unavailable iOS simulator runtimes"
-        case .dnsCache: return "Flush DNS cache to resolve network issues"
-        case .trash: return "Items in the trash bin"
-        case .systemTemp: return "Temporary system files older than 1 day"
-        case .containerCaches: return "App sandbox container caches"
-        case .systemData: return "System caches, temp files, iOS backups, and VM sleep image"
-        case .macOSSystem: return "macOS system files, localized resources, and font caches"
-        }
-    }
-
-    var sidebarDestination: SidebarItem {
-        switch self {
-        case .trash: return .trash
-        case .claudeVM, .xcodeData, .iosSimulators, .dnsCache, .systemTemp, .systemData, .macOSSystem:
-            return .deepCleanup
-        default:
-            return .cacheCleanup
+        case .userCaches: return String(localized: "可安全再生的应用缓存文件")
+        case .systemCaches: return String(localized: "系统级缓存（需要管理员权限）")
+        case .userLogs: return String(localized: "用户应用日志文件")
+        case .systemLogs: return String(localized: "系统日志文件（需要管理员权限）")
+        case .appCaches: return String(localized: "浏览器与 IDE 的缓存目录（不含配置数据）")
+        case .claudeVM: return String(localized: "Claude VM 磁盘镜像（保留 .zst 压缩备份）")
+        case .xcodeData: return String(localized: "DerivedData、设备支持与 Archives")
+        case .iosSimulators: return String(localized: "不可用的 iOS 模拟器运行时")
+        case .dnsCache: return String(localized: "刷新 DNS 缓存以修复网络问题")
+        case .trash: return String(localized: "废纸篓中的项目")
+        case .systemTemp: return String(localized: "超过保留天数的临时文件")
+        case .containerCaches: return String(localized: "沙盒容器缓存")
+        case .systemData: return String(localized: "系统缓存、临时文件、iOS 备份")
+        case .macOSSystem: return String(localized: "macOS 字体缓存与诊断报告")
         }
     }
 }

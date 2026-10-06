@@ -1,171 +1,240 @@
 import Foundation
 
-actor DiagnosticService {
-    private let fileManager = FileManager.default
+/// 磁盘诊断：容量、快照、大目录、大文件。
+final class DiagnosticService: Sendable {
 
-    // MARK: - Disk Info
+    private var fileManager: FileManager { .default }
+
+    // MARK: - 磁盘容量
+
     func getStorageInfo() async throws -> StorageInfo {
-        let home = NSHomeDirectory()
-        let attrs = try fileManager.attributesOfFileSystem(forPath: home)
+        let home = URL.homeDirectory
+        guard let capacity = fileManager.availableCapacity(for: home) else {
+            throw DiagnosticError.capacityUnavailable
+        }
 
-        let total = (attrs[.systemSize] as? NSNumber)?.int64Value ?? 0
-        let free = (attrs[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
-        let used = total - free
+        // 并行统计废纸篓与缓存，避免串行叠加耗时
+        async let trashBytes = Task.detached(priority: .utility) { [fileManager] in
+            fileManager.trashSize()
+        }.value
+        async let cacheBytes = Task.detached(priority: .utility) { [fileManager] in
+            let caches = URL(fileURLWithPath: CleanupPolicy.home("Library/Caches"))
+            return fileManager.fileExists(atPath: caches.path) ? fileManager.directorySize(at: caches) : 0
+        }.value
 
-        let trashBytes = fileManager.trashSize()
-        let cacheBytes = await scanCacheSizes()
-
+        let used = max(0, capacity.total - capacity.free)
         return StorageInfo(
-            totalBytes: total,
+            totalBytes: capacity.total,
             usedBytes: used,
-            freeBytes: free,
-            trashBytes: trashBytes,
-            cacheBytes: cacheBytes
+            freeBytes: capacity.free,
+            trashBytes: await trashBytes,
+            cacheBytes: await cacheBytes
         )
     }
 
-    // MARK: - Time Machine Snapshots
-    func getTimeMachineSnapshots() async throws -> [TimeMachineSnapshot] {
-        guard Process.commandExists("tmutil") else { return [] }
+    // MARK: - 卷
 
-        let output = try? await Process.runAsync(executable: "/usr/bin/tmutil", arguments: ["listlocalsnapshots", "/"])
-        guard let output else { return [] }
+    /// 所有可浏览的已挂载卷（含外置盘）。
+    func getVolumes() -> [VolumeInfo] {
+        let keys: [URLResourceKey] = [
+            .volumeNameKey,
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey,
+            .volumeIsRemovableKey,
+            .volumeIsInternalKey,
+            .volumeIsBrowsableKey,
+        ]
+        let urls = fileManager.mountedVolumeURLs(
+            includingResourceValuesForKeys: keys,
+            options: [.skipHiddenVolumes]
+        ) ?? []
 
-        let lines = output.split(separator: "\n").filter { $0.contains("com.apple.TimeMachine") }
-        return parseTimeMachineSnapshots(from: lines)
-    }
-
-    private nonisolated func parseTimeMachineSnapshots(from lines: [Substring]) -> [TimeMachineSnapshot] {
-        var snapshots: [TimeMachineSnapshot] = []
-        for line in lines {
-            let parts = line.split(separator: ".")
-            guard let dateStr = parts.last.map(String.init) else { continue }
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            let date = formatter.date(from: dateStr) ?? Date()
-            snapshots.append(TimeMachineSnapshot(id: String(line), date: date, volume: "/", sizeBytes: nil))
+        return urls.compactMap { url -> VolumeInfo? in
+            guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
+            guard values.volumeIsBrowsable != false else { return nil }
+            let total = Int64(values.volumeTotalCapacity ?? 0)
+            guard total > 0 else { return nil }
+            let free = values.volumeAvailableCapacityForImportantUsage
+                ?? Int64(values.volumeAvailableCapacity ?? 0)
+            return VolumeInfo(
+                url: url,
+                name: values.volumeName ?? url.lastPathComponent,
+                totalBytes: total,
+                freeBytes: free,
+                isRemovable: values.volumeIsRemovable ?? false,
+                isInternal: values.volumeIsInternal ?? false
+            )
         }
-        return snapshots
+        .sorted { $0.totalBytes > $1.totalBytes }
     }
 
-    // MARK: - Large Directories
-    func getLargeDirectories(under path: URL, count: Int = 20) -> AsyncStream<ScanItem> {
+    // MARK: - Time Machine 快照
+
+    func getTimeMachineSnapshots() async -> [TimeMachineSnapshot] {
+        guard await Process.commandExists("tmutil") else { return [] }
+        guard let result = try? await Process.run(
+            executable: "/usr/bin/tmutil",
+            arguments: ["listlocalsnapshots", "/"],
+            timeout: 60
+        ) else { return [] }
+        return Self.parseTimeMachineSnapshots(result.standardOutput)
+    }
+
+    /// 解析 tmutil 输出。形如：com.apple.TimeMachine.2024-01-01-123456.local
+    static func parseTimeMachineSnapshots(_ output: String) -> [TimeMachineSnapshot] {
+        output.split(separator: "\n").compactMap { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard line.contains("com.apple.TimeMachine") else { return nil }
+
+            var parts = line.components(separatedBy: ".")
+            // 去掉结尾的 .local / .backup 等后缀
+            if let last = parts.last, ["local", "backup", "com"].contains(last.lowercased()) {
+                parts.removeLast()
+            }
+            guard let stamp = parts.last else { return nil }
+
+            let date = Self.snapshotFormatter.date(from: stamp)
+            return TimeMachineSnapshot(
+                id: line,
+                date: date ?? Date.distantPast,
+                volume: "/",
+                sizeBytes: nil
+            )
+        }
+    }
+
+    private static let snapshotFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        return formatter
+    }()
+
+    // MARK: - 大目录
+
+    func getLargeDirectories(under path: URL, minimumSize: Int64 = 50_000_000, count: Int = 20, entryLimit: Int = 500_000) -> AsyncStream<ScanItem> {
         AsyncStream { continuation in
-            Task {
-                let dirs = self.scanLargeDirectories(at: path)
-                for dir in dirs.prefix(count) {
-                    let item = ScanItem(
-                        url: dir.url,
+            let task = Task.detached(priority: .utility) {
+                let directories = Self.scanLargeDirectories(at: path, minimumSize: minimumSize, entryLimit: entryLimit)
+                for entry in directories.prefix(count) {
+                    continuation.yield(ScanItem(
+                        url: entry.url,
                         category: .userCaches,
-                        sizeBytes: dir.size,
-                        isDirectory: true
-                    )
-                    continuation.yield(item)
+                        subcategory: entry.url.lastPathComponent,
+                        sizeBytes: entry.size,
+                        isDirectory: true,
+                        isSelected: false,
+                        riskLevel: .caution
+                    ))
                 }
                 continuation.finish()
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
-    private nonisolated func scanLargeDirectories(at path: URL) -> [(url: URL, size: Int64)] {
+    private static func scanLargeDirectories(at path: URL, minimumSize: Int64, entryLimit: Int = 500_000) -> [(url: URL, size: Int64)] {
         guard let enumerator = FileManager.default.enumerator(
             at: path,
-            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
+            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey, .isRegularFileKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return [] }
 
-        var dirSizes: [URL: Int64] = [:]
-        let baseComponents = path.pathComponents.count
+        var directorySizes: [String: Int64] = [:]
+        var urls: [String: URL] = [:]
+        let baseDepth = path.pathComponents.count
+        var visited = 0
 
         while let fileURL = enumerator.nextObject() as? URL {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+            visited += 1
+            if visited > entryLimit { break }
+            guard let values = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true,
+                  let fileSize = values.fileSize
             else { continue }
 
-            if resourceValues.isDirectory == true { continue }
-
-            // Add file size to all parent directories
-            if let fileSize = resourceValues.fileSize {
-                var parentURL = fileURL.deletingLastPathComponent()
-                while parentURL.pathComponents.count > baseComponents {
-                    dirSizes[parentURL, default: 0] += Int64(fileSize)
-                    parentURL = parentURL.deletingLastPathComponent()
-                }
+            var parent = fileURL.deletingLastPathComponent()
+            var chain: [String] = []
+            while parent.pathComponents.count > baseDepth {
+                let key = parent.path
+                chain.append(key)
+                parent = parent.deletingLastPathComponent()
+            }
+            // 顶层目录只统计一次链，避免 O(n²) 的重复删除组件计算
+            for key in chain {
+                directorySizes[key, default: 0] += Int64(fileSize)
+                if urls[key] == nil { urls[key] = URL(fileURLWithPath: key) }
             }
         }
 
-        let result = dirSizes.map { ($0.key, $0.value) }
-            .filter { $0.1 >= 50_000_000 } // >= 50MB
-            .sorted { $0.1 > $1.1 }
-
-        return result
+        return directorySizes
+            .filter { $0.value >= minimumSize }
+            .sorted { $0.value > $1.value }
+            .compactMap { key, size in
+                guard let url = urls[key] else { return nil }
+                return (url, size)
+            }
     }
 
-    // MARK: - App Storage Breakdown
-    func getAppStorageBreakdown() -> AsyncStream<ScanItem> {
+    // MARK: - 大文件
+
+    func getLargeFiles(minimumSize: Int64, limit: Int = 200) -> AsyncStream<ScanItem> {
+        let roots = AppConstants.largeFileSearchPaths.map { URL(fileURLWithPath: CleanupPolicy.home($0)) }
+        return ScanService().scanLargeFiles(under: roots, minimumSize: minimumSize, limit: limit)
+    }
+
+    // MARK: - 应用占用
+
+    func getAppStorageBreakdown(minimumSize: Int64 = 50_000_000, count: Int = 20) -> AsyncStream<ScanItem> {
         AsyncStream { continuation in
-            Task {
-                let appSupportPath = URL.homeDirectory
+            let task = Task.detached(priority: .utility) {
+                let support = URL.homeDirectory
                     .appendingPathComponent("Library")
                     .appendingPathComponent("Application Support")
+                guard let children = try? FileManager.default.contentsOfDirectory(
+                    at: support,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) else {
+                    continuation.finish()
+                    return
+                }
 
-                let apps = self.scanAppSupportDirectories(at: appSupportPath)
-                for app in apps.prefix(20) {
-                    let item = ScanItem(
-                        url: app.url,
+                var results: [(url: URL, size: Int64)] = []
+                for child in children {
+                    guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+                    let size = FileManager.default.directorySize(at: child)
+                    if size >= minimumSize {
+                        results.append((child, size))
+                    }
+                }
+
+                for entry in results.sorted(by: { $0.size > $1.size }).prefix(count) {
+                    continuation.yield(ScanItem(
+                        url: entry.url,
                         category: .appCaches,
-                        subcategory: app.url.lastPathComponent,
-                        sizeBytes: app.size,
-                        isDirectory: true
-                    )
-                    continuation.yield(item)
+                        subcategory: entry.url.lastPathComponent,
+                        sizeBytes: entry.size,
+                        isDirectory: true,
+                        isSelected: false,
+                        riskLevel: .caution
+                    ))
                 }
                 continuation.finish()
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
-    }
-
-    private nonisolated func scanAppSupportDirectories(at path: URL) -> [(url: URL, size: Int64)] {
-        guard let enumerator = FileManager.default.enumerator(
-            at: path,
-            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
-
-        let topLevelCount = path.pathComponents.count + 1
-        var dirSizes: [URL: Int64] = [:]
-
-        while let fileURL = enumerator.nextObject() as? URL {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-            else { continue }
-
-            // Top-level apps (directories at depth + 1 from path)
-            if resourceValues.isDirectory == true, fileURL.pathComponents.count == topLevelCount {
-                let size = FileManager.default.directorySize(at: fileURL)
-                if size > 50_000_000 {
-                    dirSizes[fileURL] = size
-                }
-            }
-        }
-
-        return dirSizes.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
-    }
-
-    // MARK: - Private Helpers
-    private func scanCacheSizes() async -> Int64 {
-        let cachePath = URL.homeDirectory.appendingPathComponent("Library/Caches")
-        guard fileManager.fileExists(atPath: cachePath.path) else { return 0 }
-        return fileManager.directorySize(at: cachePath)
     }
 }
 
 enum DiagnosticError: Error, LocalizedError {
-    case parseFailed
-    case commandNotFound(String)
+    case capacityUnavailable
 
     var errorDescription: String? {
         switch self {
-        case .parseFailed: return "Failed to parse disk information"
-        case .commandNotFound(let cmd): return "Command not found: \(cmd)"
+        case .capacityUnavailable: return "无法读取磁盘容量信息"
         }
     }
 }

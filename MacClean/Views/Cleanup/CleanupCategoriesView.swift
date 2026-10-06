@@ -2,33 +2,27 @@ import SwiftUI
 
 struct CleanupCategoriesView: View {
     @State private var viewModel = CleanupViewModel()
+    @State private var showCleanConfirm = false
+    @AppStorage(SettingsKey.confirmBeforeClean) private var confirmBeforeClean = true
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 headerSection
-
-                switch viewModel.phase {
-                case .idle:
-                    categoriesGrid
-                case .scanning(let progress):
-                    scanningView(progress)
-                case .results:
-                    resultsView()
-                case .cleaning(let progress):
-                    CleanupProgressView(progress: progress, onCancel: { viewModel.cancelCleanup() })
-                case .complete(let results):
-                    CleanupResultsView(results: results) {
-                        viewModel.reset()
-                    }
-                case .error(let message):
-                    errorView(message)
-                }
+                content
             }
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground)
+        .alert("确认清理", isPresented: $showCleanConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("清理", role: .destructive) {
+                Task { await viewModel.startCleanup() }
+            }
+        } message: {
+            Text("将永久删除 \(viewModel.selectedCount) 个项目，共 \(FileSizeFormatter.string(from: viewModel.selectedBytes))。此操作不可撤销。")
+        }
     }
 
     private var headerSection: some View {
@@ -36,13 +30,15 @@ struct CleanupCategoriesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Cache Cleanup")
                     .font(.largeTitle.bold())
-                Text("Select categories to scan and clean")
+                Text("扫描并按应用粒度清理缓存、日志与系统数据")
                     .foregroundColor(.textSecondary)
             }
             Spacer()
             if case .idle = viewModel.phase {
-                Button(action: { Task { await viewModel.startScan() } }) {
-                    Label("Start Scan", systemImage: "magnifyingglass")
+                Button {
+                    Task { await viewModel.startScan() }
+                } label: {
+                    Label("开始扫描", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -50,17 +46,39 @@ struct CleanupCategoriesView: View {
         }
     }
 
+    @ViewBuilder
+    private var content: some View {
+        switch viewModel.phase {
+        case .idle:
+            categoriesGrid
+        case .scanning(let progress):
+            scanningView(progress)
+        case .results:
+            resultsView
+        case .cleaning(let progress):
+            CleanupProgressView(progress: progress, onCancel: { viewModel.cancelCleanup() })
+        case .complete(let summary):
+            CleanupResultsView(summary: summary) { viewModel.reset() }
+        case .error(let message):
+            errorView(message)
+        }
+    }
+
     private var categoriesGrid: some View {
         VStack(spacing: 20) {
+            InfoBanner(
+                style: .info,
+                message: "清理前会逐项校验安全策略：浏览器配置、钥匙串、应用包等用户数据不会被删除；需要管理员权限的项目会集中弹一次授权。"
+            )
             ForEach(["Application Caches", "System Data", "macOS"], id: \.self) { groupName in
-                let cats = CleanupCategory.allCases.filter { $0.group == groupName }
-                if !cats.isEmpty {
+                let categories = CleanupCategory.allCases.filter { $0.group == groupName }
+                if !categories.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(groupName)
                             .font(.headline)
                             .foregroundColor(.textSecondary)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280))], spacing: 12) {
-                            ForEach(cats) { category in
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))], spacing: 12) {
+                            ForEach(categories) { category in
                                 CategoryCardView(category: category, sizeBytes: 0) {
                                     Task { await viewModel.startScan() }
                                 }
@@ -73,171 +91,122 @@ struct CleanupCategoriesView: View {
     }
 
     private func scanningView(_ progress: ScanProgress) -> some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             ProgressView()
                 .scaleEffect(1.5)
-
             VStack(spacing: 8) {
-                Text("Scanning your Mac...")
+                Text("正在扫描…")
                     .font(.title2.bold())
                 Text(progress.phase)
                     .foregroundColor(.textSecondary)
             }
-
-            AnimatedProgressBar(
-                value: progress.fractionCompleted,
-                color: .appAccent
-            )
-            .frame(width: 300)
-
+            AnimatedProgressBar(value: progress.fractionCompleted, color: .appAccent)
+                .frame(width: 320)
             VStack(spacing: 4) {
-                Text("\(progress.filesScanned) files examined")
+                Text("已发现 \(progress.filesScanned) 项")
                     .font(.caption)
                     .foregroundColor(.textSecondary)
-                Text("\(FileSizeFormatter.string(from: progress.bytesFound)) found")
+                Text("合计 \(FileSizeFormatter.string(from: progress.bytesFound))")
                     .font(.caption)
                     .foregroundColor(.textSecondary)
+                Text("\(progress.categoriesCompleted) / \(progress.totalCategories) 个分类完成")
+                    .font(.caption2)
+                    .foregroundColor(.textSecondary)
             }
-
-            Button("Cancel", role: .cancel) {
-                viewModel.cancelScan()
-            }
-            .buttonStyle(.bordered)
+            Button("取消", role: .cancel) { viewModel.cancelScan() }
+                .buttonStyle(.bordered)
         }
         .padding(40)
         .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func resultsView() -> some View {
+    private var resultsView: some View {
         VStack(spacing: 16) {
-            // Summary bar
-            HStack {
-                let totalSize = viewModel.sortedScanItems.reduce(0) { $0 + $1.sizeBytes }
-                let selectedSize = viewModel.sortedScanItems.filter { viewModel.selectedItems.contains($0.id) }
-                    .reduce(0) { $0 + $1.sizeBytes }
-
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Found \(viewModel.scanItems.count) items")
+                    Text("发现 \(viewModel.scanItems.count) 项")
                         .font(.headline)
-                    Text("\(FileSizeFormatter.string(from: totalSize)) total — \(FileSizeFormatter.string(from: selectedSize)) selected")
+                    Text("合计 \(FileSizeFormatter.string(from: viewModel.totalBytes))，已选 \(FileSizeFormatter.string(from: viewModel.selectedBytes))")
                         .font(.caption)
                         .foregroundColor(.textSecondary)
                 }
                 Spacer()
 
-                Picker("Sort", selection: Bindable(viewModel).sortBy) {
-                    ForEach(CleanupViewModel.SortOption.allCases, id: \.self) { opt in
-                        Text(opt.rawValue).tag(opt)
+                Picker("排序", selection: Bindable(viewModel).sortBy) {
+                    ForEach(CleanupViewModel.SortOption.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 140)
+                .frame(width: 150)
 
-                Button("Select All") {
-                    viewModel.selectedItems = Set(viewModel.scanItems.map(\.id))
-                }
-                .buttonStyle(.borderless)
+                Button("全选安全项") { viewModel.selectSafeOnly() }
+                    .buttonStyle(.borderless)
+                Button("全选") { viewModel.selectAll() }
+                    .buttonStyle(.borderless)
+                Button("全不选") { viewModel.selectNone() }
+                    .buttonStyle(.borderless)
 
-                Button(action: { Task { await viewModel.startCleanup() } }) {
-                    Label("Clean Selected", systemImage: "trash")
+                Button {
+                    if confirmBeforeClean { showCleanConfirm = true } else { Task { await viewModel.startCleanup() } }
+                } label: {
+                    Label("清理选中项", systemImage: "trash")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.selectedItems.isEmpty)
             }
 
-            // Items list grouped by three main buckets
-            let groups = ["System Data", "Application Caches", "macOS"]
-            ForEach(groups, id: \.self) { groupName in
-                let groupItems = viewModel.sortedScanItems.filter { $0.category.group == groupName }
-                if !groupItems.isEmpty {
-                    let grouped = Dictionary(grouping: groupItems) { $0.category }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(groupName)
-                            .font(.title3.bold())
-                            .foregroundColor(.appAccent)
-                            .padding(.top, 4)
-
-                        ForEach(grouped.keys.sorted { $0.displayName < $1.displayName }, id: \.self) { category in
-                            categorySection(category, items: grouped[category]!)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func categorySection(_ category: CleanupCategory, items: [ScanItem]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: category.iconName)
-                    .foregroundColor(category.color)
-                Text(category.displayName)
-                    .font(.headline)
-                Spacer()
-                let total = items.reduce(0) { $0 + $1.sizeBytes }
-                Text(FileSizeFormatter.string(from: total))
-                    .font(.subheadline.bold())
-                    .foregroundColor(.appAccent)
+            if viewModel.scanItems.isEmpty {
+                InfoBanner(style: .success, message: "没有发现可清理的项目，你的 Mac 很干净。")
             }
 
-            ForEach(items) { item in
-                HStack {
-                    Toggle(isOn: Binding(
-                        get: { viewModel.selectedItems.contains(item.id) },
-                        set: { _ in viewModel.toggleItem(item.id) }
-                    )) {
-                        VStack(alignment: .leading) {
-                            Text(item.subcategory ?? item.url.lastPathComponent)
-                                .font(.body)
-                            if let modified = item.lastModifiedFormatted {
-                                Text(modified)
-                                    .font(.caption)
-                                    .foregroundColor(.textSecondary)
+            ForEach(viewModel.groupedItems(), id: \.group) { section in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(section.group)
+                        .font(.title3.bold())
+                        .foregroundColor(.appAccent)
+
+                    ForEach(section.categories, id: \.category) { entry in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: entry.category.iconName)
+                                    .foregroundColor(entry.category.color)
+                                Text(entry.category.displayName)
+                                    .font(.headline)
+                                Spacer()
+                                Text(FileSizeFormatter.string(from: entry.items.reduce(0) { $0 + $1.sizeBytes }))
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.appAccent)
+                            }
+
+                            ForEach(entry.items) { item in
+                                ScanItemRow(
+                                    item: item,
+                                    isSelected: viewModel.selectedItems.contains(item.id),
+                                    onToggle: { viewModel.toggleItem(item.id) }
+                                )
                             }
                         }
+                        .padding()
+                        .background(Color.appCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
-                    .toggleStyle(.checkbox)
-
-                    Button {
-                        NSWorkspace.shared.activateFileViewerSelecting([item.url])
-                    } label: {
-                        Image(systemName: "arrow.right.circle")
-                            .foregroundColor(.appAccent)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Reveal in Finder")
-
-                    StatusIcon(riskLevel: category.riskLevel)
-                        .font(.caption)
-
-                    Text(item.sizeFormatted)
-                        .font(.system(.body, design: .rounded).monospacedDigit())
-                        .foregroundColor(.textSecondary)
-                        .frame(width: 80, alignment: .trailing)
                 }
-                .padding(.leading, 20)
             }
         }
-        .padding()
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private func errorView(_ message: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 48))
+                .font(.system(size: 44))
                 .foregroundColor(.riskCaution)
-            Text("Error")
-                .font(.title2.bold())
             Text(message)
                 .foregroundColor(.textSecondary)
                 .multilineTextAlignment(.center)
-            Button("Try Again") {
-                viewModel.reset()
-            }
-            .buttonStyle(.borderedProminent)
+            Button("重试") { viewModel.reset() }
+                .buttonStyle(.borderedProminent)
         }
         .padding(40)
         .background(Color.appCard)

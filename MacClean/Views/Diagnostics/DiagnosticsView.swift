@@ -6,21 +6,10 @@ struct DiagnosticsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Storage Analysis")
-                            .font(.largeTitle.bold())
-                        Text("Detailed view of disk usage and large files")
-                            .foregroundColor(.textSecondary)
-                    }
-                    Spacer()
-                    if !viewModel.isScanning {
-                        Button(action: { Task { await viewModel.runFullDiagnostics() } }) {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                    }
+                header
+
+                if !viewModel.hasFullDiskAccess {
+                    FullDiskAccessBanner()
                 }
 
                 if viewModel.isScanning {
@@ -31,6 +20,14 @@ struct DiagnosticsView: View {
                     storageInfoSection(info)
                 }
 
+                if !viewModel.volumes.isEmpty {
+                    volumesSection
+                }
+
+                if !viewModel.largeFiles.isEmpty {
+                    largeFilesSection
+                }
+
                 if !viewModel.largeDirectories.isEmpty {
                     largeDirectoriesSection
                 }
@@ -39,12 +36,16 @@ struct DiagnosticsView: View {
                     appBreakdownSection
                 }
 
-                if !viewModel.timeMachineSnapshots.isEmpty {
+                if !viewModel.snapshots.isEmpty {
                     timeMachineSection
                 }
 
-                if viewModel.error != nil {
-                    errorSection
+                if let result = viewModel.maintenanceResult {
+                    MaintenanceResultRow(result: result)
+                }
+
+                if let error = viewModel.error {
+                    InfoBanner(style: .error, message: error)
                 }
             }
             .padding(24)
@@ -54,11 +55,30 @@ struct DiagnosticsView: View {
         .task { await viewModel.runFullDiagnostics() }
     }
 
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Storage Analysis")
+                    .font(.largeTitle.bold())
+                Text("磁盘占用、大文件与本地快照")
+                    .foregroundColor(.textSecondary)
+            }
+            Spacer()
+            if !viewModel.isScanning {
+                Button {
+                    Task { await viewModel.runFullDiagnostics() }
+                } label: {
+                    Label("重新分析", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
     private var scanningSection: some View {
         VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.5)
-            Text("Analyzing storage...")
+            ProgressView().scaleEffect(1.5)
+            Text("正在分析存储占用…")
                 .foregroundColor(.textSecondary)
         }
         .padding(40)
@@ -95,20 +115,131 @@ struct DiagnosticsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private var largeDirectoriesSection: some View {
-        VStack(spacing: 8) {
-            Text("Largest Directories")
+    private var largeFilesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("大文件（按文件，而非目录）")
                 .font(.title2.bold())
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("大于 \(FileSizeFormatter.string(from: CleanupOptions.current.largeFileThresholdBytes)) 的文件，可在设置中调整阈值")
+                .font(.caption)
+                .foregroundColor(.textSecondary)
 
+            ForEach(viewModel.largeFiles.prefix(50)) { item in
+                HStack(spacing: 10) {
+                    Image(systemName: "doc.fill")
+                        .foregroundColor(.appAccent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.displayName)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(item.url.deletingLastPathComponent().path)
+                            .font(.caption2)
+                            .foregroundColor(.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer()
+                    FileSizeText(bytes: item.sizeBytes, font: .callout.monospacedDigit(), color: .textSecondary)
+                    Button("移到废纸篓") {
+                        Task { await viewModel.moveToTrash(item) }
+                    }
+                    .buttonStyle(.borderless)
+                    Button {
+                        viewModel.reveal(item)
+                    } label: {
+                        Image(systemName: "arrow.right.circle")
+                            .foregroundColor(.appAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("在 Finder 中显示")
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding()
+        .background(Color.appCard)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var volumesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("已挂载的卷")
+                .font(.title2.bold())
+
+            ForEach(viewModel.volumes) { volume in
+                HStack(spacing: 12) {
+                    Image(systemName: volume.isRemovable ? "externaldrive.fill" : "internaldrive.fill")
+                        .foregroundColor(volume.isRemovable ? .purple : .appAccent)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(volume.name)
+                                .font(.callout.bold())
+                            if volume.isRemovable {
+                                Text("外置")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.purple.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        Text("\(FileSizeFormatter.string(from: volume.usedBytes)) / \(FileSizeFormatter.string(from: volume.totalBytes)) · 可用 \(FileSizeFormatter.string(from: volume.freeBytes))")
+                            .font(.caption2)
+                            .foregroundColor(.textSecondary)
+                    }
+
+                    Spacer()
+
+                    ProgressView(value: min(volume.usagePercentage, 1))
+                        .frame(width: 120)
+
+                    Button("分析此卷") {
+                        Task { await viewModel.selectVolume(volume.id) }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(viewModel.isScanning)
+                }
+                .padding(.vertical, 4)
+            }
+
+            if viewModel.selectedVolumeID != nil {
+                Button("恢复为「用户主目录」范围") {
+                    Task { await viewModel.selectVolume(nil) }
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding()
+        .background(Color.appCard)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var largeDirectoriesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Largest Directories")
+                    .font(.title2.bold())
+                Text("范围：\(viewModel.scopeDescription)")
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
+            }
             ForEach(viewModel.largeDirectories) { item in
                 HStack {
                     Image(systemName: "folder.fill")
                         .foregroundColor(.appAccent)
                     Text(item.url.lastPathComponent)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                     Spacer()
                     FileSizeText(bytes: item.sizeBytes, font: .body.monospacedDigit(), color: .textSecondary)
+                    Button {
+                        viewModel.reveal(item)
+                    } label: {
+                        Image(systemName: "arrow.right.circle")
+                            .foregroundColor(.appAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("在 Finder 中显示")
                 }
                 .padding(.horizontal)
             }
@@ -119,16 +250,14 @@ struct DiagnosticsView: View {
     }
 
     private var appBreakdownSection: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("App Storage Breakdown")
                 .font(.title2.bold())
-                .frame(maxWidth: .infinity, alignment: .leading)
-
             ForEach(viewModel.appBreakdown) { item in
                 HStack {
                     Image(systemName: "app.fill")
                         .foregroundColor(.purple)
-                    Text(item.subcategory ?? item.url.lastPathComponent)
+                    Text(item.displayName)
                         .lineLimit(1)
                     Spacer()
                     FileSizeText(bytes: item.sizeBytes, font: .body.monospacedDigit(), color: .textSecondary)
@@ -142,20 +271,35 @@ struct DiagnosticsView: View {
     }
 
     private var timeMachineSection: some View {
-        VStack(spacing: 8) {
-            Text("Time Machine Snapshots")
-                .font(.title2.bold())
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Time Machine 本地快照")
+                    .font(.title2.bold())
+                Spacer()
+                Button {
+                    Task { await viewModel.deleteTimeMachineSnapshots() }
+                } label: {
+                    if viewModel.isDeletingSnapshots {
+                        ProgressView().scaleEffect(0.6)
+                    } else {
+                        Label("清理快照", systemImage: "trash")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isDeletingSnapshots)
+            }
 
-            ForEach(viewModel.timeMachineSnapshots) { snapshot in
+            ForEach(viewModel.snapshots) { snapshot in
                 HStack {
                     Image(systemName: "clock.arrow.circlepath")
                         .foregroundColor(.blue)
-                    Text(snapshot.date, style: .date)
+                    Text(snapshot.date.formatted(date: .abbreviated, time: .shortened))
                     Spacer()
-                    Text(snapshot.id.suffix(8).prefix(8).description)
-                        .font(.caption)
+                    Text(snapshot.id)
+                        .font(.caption2)
                         .foregroundColor(.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
                 }
                 .padding(.horizontal)
             }
@@ -163,18 +307,6 @@ struct DiagnosticsView: View {
         .padding()
         .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var errorSection: some View {
-        HStack {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundColor(.riskCaution)
-            Text(viewModel.error ?? "Unknown error")
-                .foregroundColor(.textSecondary)
-        }
-        .padding()
-        .background(Color.riskCaution.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -185,9 +317,7 @@ struct DiskStatRow: View {
 
     var body: some View {
         HStack {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
+            Circle().fill(color).frame(width: 8, height: 8)
             Text(label)
                 .foregroundColor(.textSecondary)
                 .frame(width: 60, alignment: .leading)

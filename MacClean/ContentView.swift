@@ -27,6 +27,14 @@ struct ContentView: View {
             DiagnosticsView()
         case .trash:
             TrashView()
+        case .uninstaller:
+            UninstallerView()
+        case .duplicates:
+            DuplicateFinderView()
+        case .privacy:
+            PrivacyCleanerView()
+        case .loginItems:
+            LoginItemsView()
         }
     }
 }

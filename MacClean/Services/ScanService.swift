@@ -1,415 +1,377 @@
 import Foundation
+import os
 
-actor ScanService {
-    private let fileManager = FileManager.default
-    private var isCancelled = false
+/// 扫描服务。
+///
+/// 与旧实现的关键差异：
+/// - 不再是 actor：取消状态用 OSAllocatedUnfairLock 保护，重活在 detached 任务里跑，
+///   因此 cancel() 能立即生效，且不会阻塞任何 actor；
+/// - 只产出细粒度条目（按应用/项目分组），不再把 ~/Library/Caches 这类大目录聚合成一条；
+/// - 每个条目在产出前先过 CleanupPolicy，策略不允许的路径根本不会出现在结果里；
+/// - 废纸篓产出的是内容，不是 .Trash 目录本身。
+final class ScanService: Sendable {
 
-    func cancel() { isCancelled = true }
+    private let cancelFlag = OSAllocatedUnfairLock(initialState: false)
 
-    // MARK: - Core Scanning
-    func scanPath(
-        _ url: URL,
-        category: CleanupCategory,
-        subcategory: String? = nil
+    func cancel() { cancelFlag.withLock { $0 = true } }
+    func resetCancellation() { cancelFlag.withLock { $0 = false } }
+    var isCancelled: Bool { cancelFlag.withLock { $0 } }
+
+    private var fileManager: FileManager { .default }
+
+    // MARK: - 流构造
+
+    private func stream(
+        _ work: @escaping @Sendable (AsyncStream<ScanItem>.Continuation) async -> Void
     ) -> AsyncStream<ScanItem> {
-        AsyncStream { continuation in
-            guard !self.isCancelled else {
+        AsyncStream(bufferingPolicy: .unbounded) { continuation in
+            let task = Task.detached(priority: .userInitiated) {
+                await work(continuation)
                 continuation.finish()
-                return
             }
-
-            guard fileManager.fileExists(atPath: url.path) else {
-                continuation.finish()
-                return
-            }
-
-            // For directories, scan children
-            var isDir: ObjCBool = false
-            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir) else {
-                continuation.finish()
-                return
-            }
-
-            if isDir.boolValue {
-                self.scanDirectory(url, category: category, subcategory: subcategory) { item in
-                    if !self.isCancelled {
-                        continuation.yield(item)
-                    }
-                }
-            } else {
-                let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-                let size = attrs?[.size] as? Int64 ?? 0
-                let modDate = attrs?[.modificationDate] as? Date
-                let item = ScanItem(
-                    url: url,
-                    category: category,
-                    subcategory: subcategory,
-                    sizeBytes: size,
-                    isDirectory: false,
-                    lastModified: modDate
-                )
-                if !self.isCancelled {
-                    continuation.yield(item)
-                }
-            }
-            continuation.finish()
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
-    private func scanDirectory(
-        _ url: URL,
+    @discardableResult
+    private func emit(_ items: [ScanItem], to continuation: AsyncStream<ScanItem>.Continuation) -> Bool {
+        for item in items {
+            if isCancelled { return false }
+            continuation.yield(item)
+        }
+        return true
+    }
+
+    // MARK: - 通用工具
+
+    private func childURLs(of directory: URL) -> [URL] {
+        guard let children = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return children.filter { !CleanupPolicy.isSymbolicLink($0) }
+    }
+
+    private func size(of url: URL) -> Int64 {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return 0 }
+        if isDirectory.boolValue {
+            return fileManager.directorySize(at: url)
+        }
+        return (try? fileManager.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
+    }
+
+    private func item(
+        for url: URL,
         category: CleanupCategory,
-        subcategory: String?,
-        yield: (ScanItem) -> Void
-    ) {
-        guard let enumerator = fileManager.enumerator(
-            at: url,
-            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return }
-
-        var totalSize: Int64 = 0
-        var fileCount = 0
-
-        for case let fileURL as URL in enumerator {
-            if isCancelled { return }
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                  resourceValues.isRegularFile == true,
-                  let fileSize = resourceValues.fileSize
-            else { continue }
-
-            totalSize += Int64(fileSize)
-            fileCount += 1
+        subcategory: String? = nil,
+        size overrideSize: Int64? = nil,
+        riskLevel: RiskLevel? = nil,
+        isRemovable: Bool = true,
+        notRemovableReason: String? = nil,
+        lastModified: Date? = nil,
+        requirePositiveSize: Bool = true
+    ) -> ScanItem? {
+        let decision = CleanupPolicy.evaluate(url)
+        guard decision.isAllowed else {
+            AppLog.denied(url.path, reason: decision.reason ?? "policy")
+            return nil
         }
+        let bytes = overrideSize ?? size(of: url)
+        if requirePositiveSize && bytes <= 0 { return nil }
+        var isDirectory: ObjCBool = false
+        _ = fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        let modified = lastModified
+            ?? (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        return ScanItem(
+            url: url,
+            category: category,
+            subcategory: subcategory,
+            sizeBytes: bytes,
+            isDirectory: isDirectory.boolValue,
+            lastModified: modified,
+            isSelected: (riskLevel ?? category.riskLevel) == .safe,
+            riskLevel: riskLevel,
+            isRemovable: isRemovable,
+            notRemovableReason: notRemovableReason,
+            requiresPrivilege: decision.requiresPrivilege
+        )
+    }
 
-        if totalSize > 0 {
-            let item = ScanItem(
-                url: url,
-                category: category,
-                subcategory: subcategory,
-                sizeBytes: totalSize,
-                isDirectory: true,
-                lastModified: (try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-            )
-            yield(item)
+    private func childItems(
+        of directory: URL,
+        category: CleanupCategory,
+        subcategoryPrefix: String? = nil,
+        riskLevel: RiskLevel? = nil,
+        requirePositiveSize: Bool = true,
+        filter: (URL) -> Bool = { _ in true }
+    ) -> [ScanItem] {
+        childURLs(of: directory).compactMap { child in
+            guard filter(child) else { return nil }
+            let name = subcategoryPrefix.map { prefix in prefix + "/" + child.lastPathComponent } ?? child.lastPathComponent
+            return item(for: child, category: category, subcategory: name, riskLevel: riskLevel, requirePositiveSize: requirePositiveSize)
         }
     }
 
-    // MARK: - User Caches
+    // MARK: - 用户缓存 / 日志
+
     func scanUserCaches() -> AsyncStream<ScanItem> {
-        scanPath(
-            URL.homeDirectory.appendingPathComponent(AppConstants.userCachePath),
-            category: .userCaches
-        )
+        stream { [self] continuation in
+            let root = URL(fileURLWithPath: CleanupPolicy.home("Library/Caches"))
+            guard !isCancelled else { return }
+            emit(childItems(of: root, category: .userCaches), to: continuation)
+        }
     }
 
-    // MARK: - User Logs
     func scanUserLogs() -> AsyncStream<ScanItem> {
-        scanPath(
-            URL.homeDirectory.appendingPathComponent(AppConstants.userLogsPath),
-            category: .userLogs
-        )
+        stream { [self] continuation in
+            let root = URL(fileURLWithPath: CleanupPolicy.home("Library/Logs"))
+            guard !isCancelled else { return }
+            emit(childItems(of: root, category: .userLogs), to: continuation)
+        }
     }
 
-    // MARK: - App Caches
-    func scanAppCaches() async -> [ScanItem] {
-        var items: [ScanItem] = []
+    // MARK: - 应用缓存（只取缓存叶子，绝不碰配置目录）
 
-        // Claude
-        let claudePath = URL.homeDirectory.appendingPathComponent(AppConstants.claudeAppSupport)
-        items += await scanAppCacheDir(claudePath, appName: "Claude-3p", category: .appCaches)
-
-        // OpenAI Atlas
-        let atlasPath = URL.homeDirectory.appendingPathComponent(AppConstants.openaiAtlas)
-        items += await scanAppCacheDir(atlasPath, appName: "OpenAI Atlas", category: .appCaches)
-
-        // Codex
-        let codexPath = URL.homeDirectory.appendingPathComponent(AppConstants.codex)
-        items += await scanAppCacheDir(codexPath, appName: "Codex", category: .appCaches)
-
-        // Windsurf
-        let windsurfPath = URL.homeDirectory.appendingPathComponent(AppConstants.windsurf)
-        items += await scanAppCacheDir(windsurfPath, appName: "Windsurf", category: .appCaches)
-
-        // VS Code
-        let vscodePath = URL.homeDirectory.appendingPathComponent(AppConstants.vscode)
-        items += await scanAppCacheDir(vscodePath, appName: "VS Code", category: .appCaches)
-
-        // Bilibili
-        let bilibiliPath = URL.homeDirectory.appendingPathComponent(AppConstants.bilibili)
-        items += await scanAppCacheDir(bilibiliPath, appName: "Bilibili", category: .appCaches)
-
-        // Brave
-        let bravePath = URL.homeDirectory.appendingPathComponent(AppConstants.brave)
-        items += await scanAppCacheDir(bravePath, appName: "Brave", category: .appCaches)
-
-        // Chrome
-        let chromePath = URL.homeDirectory.appendingPathComponent(AppConstants.chrome)
-        items += await scanAppCacheDir(chromePath, appName: "Chrome", category: .appCaches)
-
-        return items
+    func scanAppCaches() -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            for anchor in AppConstants.appCacheAnchors {
+                if isCancelled { return }
+                let anchorURL = URL(fileURLWithPath: CleanupPolicy.home(anchor.path))
+                guard fileManager.fileExists(atPath: anchorURL.path) else { continue }
+                let leaves = cacheLeaves(under: anchorURL, maxDepth: 3, appName: anchor.name)
+                if !emit(leaves, to: continuation) { return }
+            }
+        }
     }
 
-    private func scanAppCacheDir(_ path: URL, appName: String, category: CleanupCategory) async -> [ScanItem] {
-        guard fileManager.fileExists(atPath: path.path) else { return [] }
+    /// 深度受限地查找缓存叶子目录：命中 allowedCacheLeafNames 即收录且不再下探。
+    private func cacheLeaves(under root: URL, maxDepth: Int, appName: String) -> [ScanItem] {
+        var results: [ScanItem] = []
+        var queue: [(URL, Int)] = [(root, 0)]
 
-        // Look for common cache subdirectories
-        let cacheDirs = ["Cache", "Caches", "GPUCache", "Code Cache", "DawnWebGPUCache", "DawnGraphiteCache",
-                         "CachedData", "browser-data", "Default"]
-
-        var items: [ScanItem] = []
-        for dirName in cacheDirs {
-            let dirPath = path.appendingPathComponent(dirName)
-            var isDir: ObjCBool = false
-            if fileManager.fileExists(atPath: dirPath.path, isDirectory: &isDir), isDir.boolValue {
-                let size = fileManager.directorySize(at: dirPath)
-                if size > 0 {
-                    items.append(ScanItem(
-                        url: dirPath,
-                        category: category,
-                        subcategory: appName,
-                        sizeBytes: size,
-                        isDirectory: true
-                    ))
+        while let entry = queue.popLast() {
+            if isCancelled { break }
+            let (directory, depth) = entry
+            guard depth < maxDepth else { continue }
+            for child in childURLs(of: directory) {
+                var isDirectory: ObjCBool = false
+                guard fileManager.fileExists(atPath: child.path, isDirectory: &isDirectory) else { continue }
+                let name = child.lastPathComponent.lowercased()
+                if isDirectory.boolValue, CleanupPolicy.allowedCacheLeafNames.contains(name) {
+                    if let scanItem = item(
+                        for: child,
+                        category: .appCaches,
+                        subcategory: appName + " / " + child.lastPathComponent
+                    ) {
+                        results.append(scanItem)
+                    }
+                } else if isDirectory.boolValue {
+                    queue.append((child, depth + 1))
                 }
             }
         }
-        return items
+        return results
+    }
+
+    // MARK: - 容器缓存
+
+    func scanContainerCaches() -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            let containers = URL(fileURLWithPath: CleanupPolicy.home("Library/Containers"))
+            for container in childURLs(of: containers) {
+                if isCancelled { return }
+                let appName = container.lastPathComponent
+                for relative in ["Data/Library/Caches", "Data/Library/tmp", "Data/tmp"] {
+                    let directory = container.appendingPathComponent(relative)
+                    guard fileManager.fileExists(atPath: directory.path) else { continue }
+                    let items = childItems(of: directory, category: .containerCaches, subcategoryPrefix: appName)
+                    if !emit(items, to: continuation) { return }
+                }
+            }
+        }
     }
 
     // MARK: - Claude VM
-    func scanClaudeVM() async -> [ScanItem] {
-        let vmBundle = URL.homeDirectory.appendingPathComponent(AppConstants.claudeVMBundle)
-        guard fileManager.fileExists(atPath: vmBundle.path) else { return [] }
 
-        var items: [ScanItem] = []
-        for img in ["rootfs.img", "sessiondata.img"] {
-            let imgPath = vmBundle.appendingPathComponent(img)
-            var isDir: ObjCBool = false
-            if fileManager.fileExists(atPath: imgPath.path, isDirectory: &isDir), !isDir.boolValue {
-                let attrs = try? fileManager.attributesOfItem(atPath: imgPath.path)
-                let size = attrs?[.size] as? Int64 ?? 0
-                if size > 0 {
-                    items.append(ScanItem(
-                        url: imgPath,
-                        category: .claudeVM,
-                        subcategory: "Claude VM",
-                        sizeBytes: size,
-                        isDirectory: false
-                    ))
+    func scanClaudeVM() -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            let bundle = URL(fileURLWithPath: CleanupPolicy.home(AppConstants.claudeVMBundle))
+            guard fileManager.fileExists(atPath: bundle.path) else { return }
+            var items: [ScanItem] = []
+            for image in ["rootfs.img", "sessiondata.img"] {
+                let url = bundle.appendingPathComponent(image)
+                guard fileManager.fileExists(atPath: url.path) else { continue }
+                if let scanItem = item(
+                    for: url,
+                    category: .claudeVM,
+                    subcategory: "Claude VM / " + image,
+                    riskLevel: .caution
+                ) {
+                    items.append(scanItem)
                 }
             }
+            emit(items, to: continuation)
         }
-        return items
     }
 
-    // MARK: - Xcode Data
-    func scanXcodeData() async -> [ScanItem] {
-        var items: [ScanItem] = []
+    // MARK: - Xcode / 模拟器
 
-        let paths: [(String, String)] = [
-            (AppConstants.xcodeDerivedData, "DerivedData"),
-            (AppConstants.xcodeDeviceSupport, "Device Support"),
-            (AppConstants.xcodeArchives, "Archives"),
-        ]
+    func scanXcodeData() -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            let derived = URL(fileURLWithPath: CleanupPolicy.home(AppConstants.xcodeDerivedData))
+            if fileManager.fileExists(atPath: derived.path) {
+                let items = childItems(of: derived, category: .xcodeData, subcategoryPrefix: "DerivedData")
+                if !emit(items, to: continuation) { return }
+            }
 
-        for (relativePath, label) in paths {
-            let fullPath = URL.homeDirectory.appendingPathComponent(relativePath)
-            var isDir: ObjCBool = false
-            if fileManager.fileExists(atPath: fullPath.path, isDirectory: &isDir), isDir.boolValue {
-                let size = fileManager.directorySize(at: fullPath)
-                if size > 0 {
-                    items.append(ScanItem(
-                        url: fullPath,
-                        category: .xcodeData,
-                        subcategory: label,
-                        sizeBytes: size,
-                        isDirectory: true
-                    ))
-                }
+            let deviceSupport = URL(fileURLWithPath: CleanupPolicy.home(AppConstants.xcodeDeviceSupport))
+            if fileManager.fileExists(atPath: deviceSupport.path) {
+                let items = childItems(of: deviceSupport, category: .xcodeData, subcategoryPrefix: "Device Support")
+                if !emit(items, to: continuation) { return }
+            }
+
+            // Archives 是用户归档产物：标记为高风险，默认不勾选
+            let archives = URL(fileURLWithPath: CleanupPolicy.home(AppConstants.xcodeArchives))
+            if fileManager.fileExists(atPath: archives.path) {
+                let items = childItems(
+                    of: archives,
+                    category: .xcodeData,
+                    subcategoryPrefix: "Archives",
+                    riskLevel: .warning
+                )
+                if !emit(items, to: continuation) { return }
             }
         }
-
-        // CoreSimulator size
-        let simPath = URL.homeDirectory.appendingPathComponent(AppConstants.coreSimulator)
-        if fileManager.fileExists(atPath: simPath.path) {
-            let size = fileManager.directorySize(at: simPath)
-            if size > 0 {
-                items.append(ScanItem(
-                    url: simPath,
-                    category: .iosSimulators,
-                    subcategory: "Simulators",
-                    sizeBytes: size,
-                    isDirectory: true
-                ))
-            }
-        }
-
-        return items
     }
 
-    // MARK: - Container Caches
-    func scanContainerCaches() -> AsyncStream<ScanItem> {
-        AsyncStream { continuation in
-            Task {
-                let containersPath = URL.homeDirectory
-                    .appendingPathComponent(AppConstants.containersPath)
-                guard let containers = try? fileManager.contentsOfDirectory(
-                    at: containersPath,
-                    includingPropertiesForKeys: nil
-                ) else {
-                    continuation.finish()
-                    return
-                }
+    // MARK: - 系统数据
 
-                for container in containers {
-                    if self.isCancelled { break }
-                    let cacheDirs = [
-                        "Data/Library/Caches",
-                        "Data/Library/tmp",
-                        "Data/tmp"
-                    ]
-                    for sub in cacheDirs {
-                        let cachePath = container.appendingPathComponent(sub)
-                        var isDir: ObjCBool = false
-                        if fileManager.fileExists(atPath: cachePath.path, isDirectory: &isDir), isDir.boolValue {
-                            let size = fileManager.directorySize(at: cachePath)
-                            if size > 0 {
-                                let item = ScanItem(
-                                    url: cachePath,
-                                    category: .containerCaches,
-                                    subcategory: container.lastPathComponent,
-                                    sizeBytes: size,
-                                    isDirectory: true
-                                )
-                                continuation.yield(item)
-                            }
-                        }
+    func scanSystemData(options: CleanupOptions = .standard) -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            let systemCaches = URL(fileURLWithPath: "/Library/Caches")
+            if fileManager.fileExists(atPath: systemCaches.path) {
+                if !emit(childItems(of: systemCaches, category: .systemCaches), to: continuation) { return }
+            }
+
+            let systemLogs = URL(fileURLWithPath: "/Library/Logs")
+            if fileManager.fileExists(atPath: systemLogs.path) {
+                if !emit(childItems(of: systemLogs, category: .systemLogs), to: continuation) { return }
+            }
+
+            let varTmp = URL(fileURLWithPath: "/private/var/tmp")
+            if fileManager.fileExists(atPath: varTmp.path) {
+                if !emit(tempItems(in: varTmp, maxAgeDays: options.tempMaxAgeDays), to: continuation) { return }
+            }
+
+            let backups = URL(fileURLWithPath: CleanupPolicy.home(AppConstants.iOSBackupPath))
+            if fileManager.fileExists(atPath: backups.path) {
+                let items = childItems(of: backups, category: .systemData, subcategoryPrefix: "iOS Backups", riskLevel: .caution)
+                if !emit(items, to: continuation) { return }
+            }
+
+            // 睡眠镜像由系统管理，仅展示不可删除
+            let sleepImage = URL(fileURLWithPath: "/private/var/vm/sleepimage")
+            if fileManager.fileExists(atPath: sleepImage.path) {
+                if let infoOnly = item(
+                    for: sleepImage,
+                    category: .systemData,
+                    subcategory: "Sleep Image",
+                    riskLevel: .warning,
+                    isRemovable: false,
+                    notRemovableReason: "由系统管理，App 不支持删除"
+                ) {
+                    if !emit([infoOnly], to: continuation) { return }
+                }
+            }
+        }
+    }
+
+    private func tempItems(in directory: URL, maxAgeDays: Int) -> [ScanItem] {
+        let cutoff = Date().addingTimeInterval(-Double(max(1, maxAgeDays)) * 86_400)
+        return childItems(of: directory, category: .systemTemp) { url in
+            guard let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else {
+                return false
+            }
+            return modified < cutoff
+        }
+    }
+
+    // MARK: - macOS 系统
+
+    func scanMacOSSystem() -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            let cutoff = Date().addingTimeInterval(-7 * 86_400)
+            let roots = [
+                URL(fileURLWithPath: "/Library/Logs/DiagnosticReports"),
+                URL(fileURLWithPath: CleanupPolicy.home("Library/Logs/DiagnosticReports")),
+            ]
+            for root in roots {
+                guard fileManager.fileExists(atPath: root.path) else { continue }
+                let items = childItems(of: root, category: .macOSSystem, subcategoryPrefix: "Diagnostic Reports") { url in
+                    guard let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else {
+                        return false
                     }
+                    return modified < cutoff
                 }
-                continuation.finish()
+                if !emit(items, to: continuation) { return }
             }
         }
     }
 
-    // MARK: - Trash
-    func scanTrash() async -> ScanItem? {
-        let trashURL = URL.homeDirectory.appendingPathComponent(AppConstants.trashPath)
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: trashURL.path, isDirectory: &isDir), isDir.boolValue else {
-            return nil
+    // MARK: - 废纸篓（内容，而非目录）
+
+    func scanTrash() -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            let trash = fileManager.urls(for: .trashDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: CleanupPolicy.home(AppConstants.trashPath))
+            guard fileManager.fileExists(atPath: trash.path) else { return }
+            let items = childItems(of: trash, category: .trash, requirePositiveSize: false)
+            emit(items, to: continuation)
         }
-        let size = fileManager.directorySize(at: trashURL)
-        return ScanItem(
-            url: trashURL,
-            category: .trash,
-            sizeBytes: size,
-            isDirectory: true
-        )
     }
 
-    // MARK: - System Data
-    func scanSystemData() async -> [ScanItem] {
-        var items: [ScanItem] = []
+    // MARK: - 大文件
 
-        // /Library/Caches (system-wide, not user)
-        let libraryCaches = URL(fileURLWithPath: "/Library/Caches")
-        if fileManager.fileExists(atPath: libraryCaches.path) {
-            let size = fileManager.directorySize(at: libraryCaches)
-            if size > 0 {
-                items.append(ScanItem(url: libraryCaches, category: .systemData, subcategory: "System Caches", sizeBytes: size, isDirectory: true))
+    func scanLargeFiles(
+        under roots: [URL],
+        minimumSize: Int64,
+        limit: Int = 200
+    ) -> AsyncStream<ScanItem> {
+        stream { [self] continuation in
+            var found: [ScanItem] = []
+            for root in roots {
+                if isCancelled { return }
+                guard let enumerator = fileManager.enumerator(
+                    at: root,
+                    includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey, .contentModificationDateKey],
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                ) else { continue }
+
+                while let fileURL = enumerator.nextObject() as? URL {
+                    if isCancelled { return }
+                    guard let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .contentModificationDateKey]),
+                          values.isRegularFile == true,
+                          let fileSize = values.fileSize,
+                          Int64(fileSize) >= minimumSize
+                    else { continue }
+                    // 大文件位于用户标准文件夹，使用对应的策略（否则永远扫不出结果）
+                    guard CleanupPolicy.evaluateUserSelectedFile(fileURL).isAllowed else { continue }
+                    found.append(ScanItem(
+                        url: fileURL,
+                        category: .systemData,
+                        subcategory: fileURL.lastPathComponent,
+                        sizeBytes: Int64(fileSize),
+                        isDirectory: false,
+                        lastModified: values.contentModificationDate,
+                        isSelected: false,
+                        riskLevel: .caution
+                    ))
+                    if found.count >= limit { break }
+                }
             }
+            emit(found.sorted { $0.sizeBytes > $1.sizeBytes }, to: continuation)
         }
-
-        // /System/Library/Caches
-        let systemCaches = URL(fileURLWithPath: "/System/Library/Caches")
-        if fileManager.fileExists(atPath: systemCaches.path) {
-            let size = fileManager.directorySize(at: systemCaches)
-            if size > 0 {
-                items.append(ScanItem(url: systemCaches, category: .systemData, subcategory: "System Library Caches", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        // /private/var/tmp
-        let varTmp = URL(fileURLWithPath: "/private/var/tmp")
-        if fileManager.fileExists(atPath: varTmp.path) {
-            let size = fileManager.directorySize(at: varTmp)
-            if size > 0 {
-                items.append(ScanItem(url: varTmp, category: .systemData, subcategory: "System Temp (var/tmp)", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        // /private/var/folders (app sandbox temp)
-        let varFolders = URL(fileURLWithPath: "/private/var/folders")
-        if fileManager.fileExists(atPath: varFolders.path) {
-            let size = fileManager.directorySize(at: varFolders)
-            if size > 0 {
-                items.append(ScanItem(url: varFolders, category: .systemData, subcategory: "App Sandbox Temp", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        // iOS Backups
-        let iosBackup = URL.homeDirectory.appendingPathComponent(AppConstants.iOSBackupPath)
-        if fileManager.fileExists(atPath: iosBackup.path) {
-            let size = fileManager.directorySize(at: iosBackup)
-            if size > 0 {
-                items.append(ScanItem(url: iosBackup, category: .systemData, subcategory: "iOS Backups", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        // Sleep image
-        let sleepImage = URL(fileURLWithPath: "/private/var/vm/sleepimage")
-        if fileManager.fileExists(atPath: sleepImage.path) {
-            let attrs = try? fileManager.attributesOfItem(atPath: sleepImage.path)
-            let size = attrs?[.size] as? Int64 ?? 0
-            if size > 0 {
-                items.append(ScanItem(url: sleepImage, category: .systemData, subcategory: "Sleep Image", sizeBytes: size, isDirectory: false))
-            }
-        }
-
-        return items
-    }
-
-    // MARK: - macOS System
-    func scanMacOSSystem() async -> [ScanItem] {
-        var items: [ScanItem] = []
-
-        // Font caches
-        let fontCaches = URL.homeDirectory.appendingPathComponent("Library/Caches/com.apple.ATS")
-        if fileManager.fileExists(atPath: fontCaches.path) {
-            let size = fileManager.directorySize(at: fontCaches)
-            if size > 0 {
-                items.append(ScanItem(url: fontCaches, category: .macOSSystem, subcategory: "Font Caches", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        // Old system diagnostic reports
-        let diagnosticReports = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports")
-        if fileManager.fileExists(atPath: diagnosticReports.path) {
-            let size = fileManager.directorySize(at: diagnosticReports)
-            if size > 0 {
-                items.append(ScanItem(url: diagnosticReports, category: .macOSSystem, subcategory: "Diagnostic Reports", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        // User diagnostic reports
-        let userDiagnostics = URL.homeDirectory.appendingPathComponent("Library/Logs/DiagnosticReports")
-        if fileManager.fileExists(atPath: userDiagnostics.path) {
-            let size = fileManager.directorySize(at: userDiagnostics)
-            if size > 0 {
-                items.append(ScanItem(url: userDiagnostics, category: .macOSSystem, subcategory: "User Diagnostic Reports", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        // Accessibility font caches
-        let fontCacheDir = URL.homeDirectory.appendingPathComponent("Library/Caches/com.apple.FontRegistry")
-        if fileManager.fileExists(atPath: fontCacheDir.path) {
-            let size = fileManager.directorySize(at: fontCacheDir)
-            if size > 0 {
-                items.append(ScanItem(url: fontCacheDir, category: .macOSSystem, subcategory: "Font Registry Caches", sizeBytes: size, isDirectory: true))
-            }
-        }
-
-        return items
     }
 }

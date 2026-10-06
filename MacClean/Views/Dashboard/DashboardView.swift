@@ -4,19 +4,24 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var cleanupVM = CleanupViewModel()
     @State private var showSmartScan = false
+    @State private var showCleanConfirm = false
     @State private var cleanupHistory = CleanupHistory.shared
+    @State private var hasFullDiskAccess = true
+    @AppStorage(SettingsKey.confirmBeforeClean) private var confirmBeforeClean = true
     @Environment(AppViewModel.self) private var appVM
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Header
                 headerSection
 
                 if showSmartScan {
                     smartScanSection
                 } else {
-                    // Storage Overview
+                    if !hasFullDiskAccess {
+                        FullDiskAccessBanner()
+                    }
+
                     if let info = viewModel.storageInfo {
                         storageOverviewSection(info)
                     } else if viewModel.isScanning {
@@ -25,13 +30,12 @@ struct DashboardView: View {
                             .frame(maxWidth: .infinity, minHeight: 120)
                     }
 
-                    // Quick Actions
                     quickActionsSection
 
-                    // Recent Cleanup
-                    recentCleanupSection
+                    if !cleanupHistory.records.isEmpty {
+                        recentCleanupSection
+                    }
 
-                    // Category Grid
                     categoryGridSection
                 }
             }
@@ -40,24 +44,32 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground)
         .task {
+            hasFullDiskAccess = MaintenanceService().hasFullDiskAccess()
             await viewModel.refreshStorageInfo()
+        }
+        .alert("确认清理", isPresented: $showCleanConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("清理", role: .destructive) {
+                Task { await cleanupVM.startCleanup() }
+            }
+        } message: {
+            Text("将永久删除 \(cleanupVM.selectedCount) 个项目，共 \(FileSizeFormatter.string(from: cleanupVM.selectedBytes))。")
         }
     }
 
     // MARK: - Header
+
     private var headerSection: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Dashboard")
                     .font(.largeTitle.bold())
                 if let info = viewModel.storageInfo {
-                    let used = FileSizeFormatter.string(from: info.usedBytes)
-                    let total = FileSizeFormatter.string(from: info.totalBytes)
-                    Text("\(used) used of \(total)")
+                    Text("已用 \(FileSizeFormatter.string(from: info.usedBytes)) / \(FileSizeFormatter.string(from: info.totalBytes))")
                         .font(.subheadline)
                         .foregroundColor(.textSecondary)
                 } else {
-                    Text("Storage overview at a glance")
+                    Text("磁盘概况一览")
                         .font(.subheadline)
                         .foregroundColor(.textSecondary)
                 }
@@ -74,10 +86,10 @@ struct DashboardView: View {
                 )
             }
         }
-        .padding(.bottom, 8)
     }
 
-    // MARK: - Storage Overview
+    // MARK: - Storage
+
     private func storageOverviewSection(_ info: StorageInfo) -> some View {
         VStack(spacing: 16) {
             HStack {
@@ -85,20 +97,16 @@ struct DashboardView: View {
                     .font(.title2.bold())
                 Spacer()
                 if viewModel.isScanning {
-                    ProgressView()
-                        .scaleEffect(0.8)
+                    ProgressView().scaleEffect(0.8)
                 } else {
                     HStack(spacing: 12) {
                         if let last = viewModel.lastRefreshed {
                             Text(last, style: .relative)
                                 .font(.caption)
                                 .foregroundColor(.textSecondary)
-                            + Text(" ago")
-                                .font(.caption)
-                                .foregroundColor(.textSecondary)
                         }
-                        Button("Refresh", systemImage: "arrow.clockwise") {
-                            Task { await viewModel.refreshStorageInfo() }
+                        Button("刷新", systemImage: "arrow.clockwise") {
+                            Task { await viewModel.refreshStorageInfo(force: true) }
                         }
                         .buttonStyle(.borderless)
                     }
@@ -125,8 +133,7 @@ struct DashboardView: View {
                         statRow(label: "Trash", value: FileSizeFormatter.string(from: trash), color: .red)
                     }
                     let known = (info.cacheBytes ?? 0) + (info.trashBytes ?? 0)
-                    let other = max(0, info.usedBytes - known)
-                    statRow(label: "Other", value: FileSizeFormatter.string(from: other), color: .textSecondary)
+                    statRow(label: "Other", value: FileSizeFormatter.string(from: max(0, info.usedBytes - known)), color: .textSecondary)
                 }
             }
             .padding()
@@ -138,9 +145,7 @@ struct DashboardView: View {
 
     private func statRow(label: String, value: String, color: Color) -> some View {
         HStack {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
+            Circle().fill(color).frame(width: 8, height: 8)
             Text(label)
                 .foregroundColor(.textSecondary)
                 .frame(width: 60, alignment: .leading)
@@ -150,47 +155,25 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Quick Actions
+    // MARK: - Quick actions
+
     private var quickActionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Quick Actions")
                 .font(.title2.bold())
 
             HStack(spacing: 16) {
-                quickActionButton(
-                    title: "Smart Scan",
-                    subtitle: "Scan all caches",
-                    icon: "sparkle.magnifyingglass",
-                    color: .appAccent
-                ) {
+                quickActionButton(title: "Smart Scan", subtitle: "扫描全部可清理项", icon: "sparkle.magnifyingglass", color: .appAccent) {
                     withAnimation { showSmartScan = true }
                     await cleanupVM.startScan()
                 }
-
-                quickActionButton(
-                    title: "Deep Clean",
-                    subtitle: "System data & more",
-                    icon: "trash.circle",
-                    color: .orange
-                ) {
+                quickActionButton(title: "Deep Clean", subtitle: "系统数据与开发缓存", icon: "trash.circle", color: .orange) {
                     appVM.selectedSidebarItem = .deepCleanup
                 }
-
-                quickActionButton(
-                    title: "Empty Trash",
-                    subtitle: "Free up space",
-                    icon: "trash",
-                    color: .red
-                ) {
+                quickActionButton(title: "Empty Trash", subtitle: "清空废纸篓", icon: "trash", color: .red) {
                     appVM.selectedSidebarItem = .trash
                 }
-
-                quickActionButton(
-                    title: "Analyze",
-                    subtitle: "Disk usage details",
-                    icon: "chart.pie",
-                    color: .purple
-                ) {
+                quickActionButton(title: "Analyze", subtitle: "磁盘占用明细", icon: "chart.pie", color: .purple) {
                     appVM.selectedSidebarItem = .storageAnalysis
                 }
             }
@@ -221,104 +204,70 @@ struct DashboardView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Recent Cleanup
-    private var recentCleanupSection: some View {
-        guard let lastDate = cleanupHistory.lastCleanupDate else {
-            return AnyView(EmptyView())
-        }
-        let lastFreed = cleanupHistory.lastFreedBytes
-        let totalFreed = cleanupHistory.totalFreedBytes
+    // MARK: - Recent cleanup
 
-        return AnyView(
-            VStack(alignment: .leading, spacing: 12) {
+    private var recentCleanupSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
                 Text("Recent Cleanup")
                     .font(.title2.bold())
+                Spacer()
+                Text("累计释放 \(FileSizeFormatter.string(from: cleanupHistory.totalFreedBytes))")
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
+            }
 
-                HStack(spacing: 16) {
-                    // Last cleanup date
-                    HStack(spacing: 10) {
+            VStack(spacing: 0) {
+                ForEach(cleanupHistory.records.prefix(5)) { record in
+                    HStack(spacing: 12) {
                         Image(systemName: "clock.arrow.circlepath")
-                            .font(.title3)
                             .foregroundColor(.appAccent)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Last cleaned")
+                            Text(record.date.formatted(date: .abbreviated, time: .shortened))
+                                .font(.callout)
+                                .foregroundColor(.textPrimary)
+                            Text(record.categoryNames.joined(separator: "、"))
                                 .font(.caption)
                                 .foregroundColor(.textSecondary)
-                            Text(lastDate, style: .relative)
-                                .font(.body.bold())
-                            + Text(" ago")
-                                .font(.body)
+                                .lineLimit(1)
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Divider()
-                        .frame(height: 40)
-
-                    // Last freed
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.title3)
-                            .foregroundColor(.riskSafe)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Last freed")
+                        Spacer()
+                        if record.failedItems > 0 {
+                            Text("\(record.failedItems) 项未完成")
                                 .font(.caption)
-                                .foregroundColor(.textSecondary)
-                            FileSizeText(bytes: lastFreed, font: .body.bold(), color: .riskSafe)
+                                .foregroundColor(.riskCaution)
                         }
+                        FileSizeText(bytes: record.freedBytes, font: .callout.monospacedDigit(), color: .riskSafe)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if totalFreed > lastFreed {
+                    .padding(.vertical, 8)
+                    if record.id != cleanupHistory.records.prefix(5).last?.id {
                         Divider()
-                            .frame(height: 40)
-
-                        // Total freed
-                        HStack(spacing: 10) {
-                            Image(systemName: "chart.bar.fill")
-                                .font(.title3)
-                                .foregroundColor(.appAccent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Total freed")
-                                    .font(.caption)
-                                    .foregroundColor(.textSecondary)
-                                FileSizeText(bytes: totalFreed, font: .body.bold(), color: .appAccent)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding()
-                .background(Color.appCard)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .shadow(color: .appShadow, radius: 2)
             }
-        )
+            .padding()
+            .background(Color.appCard)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
     }
 
-    // MARK: - Explore Tools
+    // MARK: - Explore
 
     private var categoryGridSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Explore Tools")
                 .font(.title2.bold())
-                .padding(.top, 8)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 160))], spacing: 12) {
-                ForEach([
-                    (icon: "magnifyingglass", title: "Cache Cleanup", color: Color.appAccent, dest: SidebarItem.cacheCleanup),
-                    (icon: "trash.circle", title: "Deep Cleanup", color: Color.orange, dest: SidebarItem.deepCleanup),
-                    (icon: "chart.pie", title: "Storage Analysis", color: Color.purple, dest: SidebarItem.storageAnalysis),
-                    (icon: "trash", title: "Trash Manager", color: Color.red, dest: SidebarItem.trash),
-                ], id: \.title) { item in
+                ForEach(SidebarItem.allCases.filter { $0 != .dashboard }) { item in
                     Button {
-                        appVM.selectedSidebarItem = item.dest
+                        appVM.selectedSidebarItem = item
                     } label: {
                         VStack(spacing: 8) {
-                            Image(systemName: item.icon)
+                            Image(systemName: item.iconName)
                                 .font(.title2)
-                                .foregroundColor(item.color)
-                            Text(item.title)
+                                .foregroundColor(.appAccent)
+                            Text(item.displayName)
                                 .font(.headline)
                                 .foregroundColor(.textPrimary)
                         }
@@ -334,18 +283,19 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Smart Scan
+    // MARK: - Smart scan
+
     @ViewBuilder
     private var smartScanSection: some View {
         switch cleanupVM.phase {
         case .idle, .scanning:
             scanningProgress
-        case .results(let items):
-            scanResultsView(items: items)
+        case .results:
+            scanResultsView
         case .cleaning(let progress):
             CleanupProgressView(progress: progress, onCancel: { cleanupVM.cancelCleanup() })
-        case .complete(let results):
-            CleanupResultsView(results: results) {
+        case .complete(let summary):
+            CleanupResultsView(summary: summary) {
                 withAnimation { showSmartScan = false }
                 cleanupVM.reset()
             }
@@ -356,9 +306,7 @@ struct DashboardView: View {
                     .foregroundColor(.riskCaution)
                 Text(message)
                     .foregroundColor(.textSecondary)
-                Button("Try Again") {
-                    cleanupVM.reset()
-                }
+                Button("重试") { cleanupVM.reset() }
             }
             .padding()
         }
@@ -366,11 +314,10 @@ struct DashboardView: View {
 
     private var scanningProgress: some View {
         VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.5)
-            Text("Scanning caches...")
+            ProgressView().scaleEffect(1.5)
+            Text("正在扫描…")
                 .font(.title3.bold())
-            Button("Cancel") {
+            Button("取消") {
                 cleanupVM.cancelScan()
                 withAnimation { showSmartScan = false }
             }
@@ -381,54 +328,50 @@ struct DashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func scanResultsView(items: [ScanItem]) -> some View {
+    private var scanResultsView: some View {
         VStack(spacing: 16) {
             HStack {
-                Text("Smart Scan Results")
+                Text("Smart Scan 结果")
                     .font(.title2.bold())
                 Spacer()
-                let total = items.reduce(0) { $0 + $1.sizeBytes }
-                Text(FileSizeFormatter.string(from: total))
+                Text("\(cleanupVM.scanItems.count) 项 · \(FileSizeFormatter.string(from: cleanupVM.totalBytes))")
                     .font(.title3.bold())
                     .foregroundColor(.appAccent)
             }
 
-            ForEach(items.prefix(20)) { item in
-                HStack {
-                    Image(systemName: item.category.iconName)
-                        .foregroundColor(item.category.color)
-                        .frame(width: 24)
-                    VStack(alignment: .leading) {
-                        Text(item.subcategory ?? item.url.lastPathComponent)
-                            .font(.body)
-                        Text(item.category.displayName)
-                            .font(.caption)
-                            .foregroundColor(.textSecondary)
-                    }
-                    Spacer()
-                    Text(item.sizeFormatted)
-                        .font(.system(.body, design: .rounded).monospacedDigit())
-                        .foregroundColor(.textSecondary)
-                    if let modified = item.lastModifiedFormatted {
-                        Text(modified)
-                            .font(.caption)
-                            .foregroundColor(.textSecondary)
-                            .frame(width: 60, alignment: .trailing)
-                    }
-                }
-                .padding(.horizontal)
+            ForEach(cleanupVM.sortedScanItems.prefix(20)) { item in
+                ScanItemRow(
+                    item: item,
+                    isSelected: cleanupVM.selectedItems.contains(item.id),
+                    onToggle: { cleanupVM.toggleItem(item.id) }
+                )
+                Divider()
+            }
+
+            if cleanupVM.scanItems.count > 20 {
+                Text("仅显示前 20 项，完整列表请在「Cache Cleanup」中查看")
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
             }
 
             HStack(spacing: 12) {
-                Button(action: { Task { await cleanupVM.startCleanup() } }) {
-                    Label("Clean Selected Items", systemImage: "trash")
+                Button("查看全部") {
+                    appVM.selectedSidebarItem = .cacheCleanup
+                    withAnimation { showSmartScan = false }
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    if confirmBeforeClean { showCleanConfirm = true } else { Task { await cleanupVM.startCleanup() } }
+                } label: {
+                    Label("清理选中项", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(cleanupVM.selectedItems.isEmpty)
 
-                Button("Back") {
+                Button("返回") {
                     withAnimation { showSmartScan = false }
                     cleanupVM.reset()
                 }

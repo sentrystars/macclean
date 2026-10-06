@@ -1,6 +1,7 @@
 import Foundation
 
 enum FileSizeFormatter {
+    /// 以 1024 进制格式化字节数，保留一位小数。
     static func string(from bytes: Int64) -> String {
         let absBytes = abs(bytes)
         let units = ["B", "KB", "MB", "GB", "TB"]
@@ -17,11 +18,5 @@ enum FileSizeFormatter {
         }
 
         return String(format: "%.1f %@", bytes < 0 ? -value : value, units[unitIndex])
-    }
-
-    static func string(from bytes: Int64, style: NumberFormatter.Style) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
     }
 }
